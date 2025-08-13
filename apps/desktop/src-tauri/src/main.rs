@@ -125,7 +125,8 @@ fn main() {
             cmd_close_month,
             cmd_month_status,
             cmd_get_settings,
-            cmd_save_settings
+            cmd_save_settings,
+            cmd_forecast
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

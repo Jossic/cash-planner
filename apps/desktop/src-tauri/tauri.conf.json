@@ -4,20 +4,29 @@
   "version": "0.1.0",
   "identifier": "com.jla.cashplanner",
   "build": {
-    "beforeDevCommand": "npm run build --prefix ./frontend && npm run preview --prefix ./frontend -- --port 5173 --strictPort",
-    "beforeBuildCommand": "npm run build --prefix ./frontend",
     "devUrl": "http://localhost:5173",
-    "frontendDist": "./frontend/dist"
+    "frontendDist": "../frontend/dist"
   },
   "app": {
     "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    },
     "windows": [
-      { "title": "JLA Cash Planner", "width": 1200, "height": 800 }
+      { 
+        "title": "JLA Cash Planner", 
+        "width": 1200, 
+        "height": 800,
+        "resizable": true
+      }
     ]
   },
   "bundle": {
-    "active": false,
-    "icon": []
+    "active": true,
+    "category": "Utility",
+    "icon": [
+      "icons/icon.png"
+    ]
   },
   "plugins": {}
 }

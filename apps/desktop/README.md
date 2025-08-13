@@ -2,19 +2,31 @@
 
 Local-first Tauri (Rust) + Qwik app to manage monthly VAT on encaissements, URSSAF, cashflow, and closings.
 
-## Dev
+## Development
 
-Prereqs: Node 18+, npm or pnpm, Rust (1.78+), Tauri 2 toolchain.
+Prerequisites: Node 18+, npm, Rust (1.78+), Tauri 2 toolchain.
 
-- Frontend dev: `cd apps/desktop/frontend && npm install && npm run dev`
-- Tauri dev (opens window, proxies to Vite): `cd apps/desktop/src-tauri && cargo tauri dev` or `npx tauri dev`
+### Two Terminal Development Setup
 
-The Tauri config is set to run `npm run dev --prefix ../frontend` automatically.
+**Terminal 1 - Frontend:**
+```bash
+cd apps/desktop/frontend 
+npm install
+npm run dev
+```
+
+**Terminal 2 - Tauri Desktop:**  
+```bash
+cd apps/desktop/src-tauri
+npx @tauri-apps/cli@^2 dev
+```
+
+The frontend will run on http://localhost:5173 and Tauri will connect to it automatically.
 
 ## Build
 
-- Frontend build: `cd apps/desktop/frontend && npm run build`
-- Desktop build: `cd apps/desktop/src-tauri && npx tauri build`
+- Frontend build: `cd apps/desktop/frontend && npm run build`  
+- Desktop build: `cd apps/desktop/src-tauri && npx @tauri-apps/cli@^2 build`
 
 ## Storage
 

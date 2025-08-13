@@ -8,28 +8,33 @@ JLA Cash Planner is a local-first desktop application for French freelancers to 
 
 ## Development Commands
 
-### Frontend Development
+### Prerequisites
 ```bash
-# Install frontend dependencies
+# Install frontend dependencies first
 npm run web:install
-
-# Frontend dev server (Vite)
-cd apps/desktop/frontend && npm run dev
-
-# Frontend build
-cd apps/desktop/frontend && npm run build
 ```
 
-### Desktop Development
-```bash
-# Full dev (installs frontend deps + runs Tauri dev)
-npm run dev
+### Development Workflow (Two Terminal Process)
 
-# Tauri dev only (opens desktop window, proxies to Vite)
-cd apps/desktop/src-tauri && npx @tauri-apps/cli@^2 dev
+**Terminal 1 - Frontend Dev Server:**
+```bash
+npm run web:dev
+# or: cd apps/desktop/frontend && npm run dev
+```
+
+**Terminal 2 - Tauri Desktop App:**
+```bash  
+npm run desktop:dev
+# or: cd apps/desktop/src-tauri && npx @tauri-apps/cli@^2 dev
+```
+
+### Build Commands
+```bash
+# Frontend build
+npm run web:build
 
 # Desktop build
-cd apps/desktop/src-tauri && npx @tauri-apps/cli@^2 build
+npm run desktop:build
 ```
 
 ### Icons

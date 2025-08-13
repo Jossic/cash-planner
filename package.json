@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "npm run web:install && npm run desktop:dev",
+    "dev": "echo 'Run \"npm run web:dev\" in one terminal and \"npm run desktop:dev\" in another terminal'",
     "web:install": "npm --prefix apps/desktop/frontend install",
     "web:dev": "npm --prefix apps/desktop/frontend run dev",
     "web:build": "npm --prefix apps/desktop/frontend run build",
