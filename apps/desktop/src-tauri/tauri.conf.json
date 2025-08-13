@@ -6,8 +6,8 @@
   "build": {
     "beforeDevCommand": "bash -c 'cd /Users/jossic/Dev/jla-cash-planner/apps/desktop/frontend && npm run dev'",
     "beforeBuildCommand": "bash -c 'cd /Users/jossic/Dev/jla-cash-planner/apps/desktop/frontend && npm run build'", 
-    "devUrl": "http://localhost:5173",
-    "frontendDist": "../frontend/dist"
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../frontend/out"
   },
   "app": {
     "withGlobalTauri": true,
