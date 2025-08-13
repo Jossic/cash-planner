@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { @apply bg-slate-50 text-slate-900; }
+.card { @apply bg-white rounded-lg shadow border border-slate-200; }
+.btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50; }
+.input { @apply border border-slate-300 rounded px-2 py-1; }
+.label { @apply text-sm text-slate-600; }
+.nav-link { @apply px-2 py-1 rounded hover:bg-slate-100; }
+
+:root.dark body { @apply bg-slate-900 text-slate-100; }
+:root.dark .card { @apply bg-slate-800 border-slate-700; }
+:root.dark .btn { @apply bg-slate-100 text-slate-900 hover:bg-white; }
+:root.dark .input { @apply border-slate-600 bg-slate-800 text-slate-100; }
+:root.dark .label { @apply text-slate-300; }
+:root.dark .nav-link { @apply hover:bg-slate-700; }

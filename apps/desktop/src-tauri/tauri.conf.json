@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "JLA Cash Planner",
+  "version": "0.1.0",
+  "identifier": "com.jla.cashplanner",
+  "build": {
+    "beforeDevCommand": "npm run build --prefix ./frontend && npm run preview --prefix ./frontend -- --port 5173 --strictPort",
+    "beforeBuildCommand": "npm run build --prefix ./frontend",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "./frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      { "title": "JLA Cash Planner", "width": 1200, "height": 800 }
+    ]
+  },
+  "bundle": {
+    "active": false,
+    "icon": []
+  },
+  "plugins": {}
+}

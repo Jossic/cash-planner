@@ -1,0 +1,14 @@
+{
+  "name": "jla-cash-planner",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm run web:install && npm run desktop:dev",
+    "web:install": "npm --prefix apps/desktop/frontend install",
+    "web:dev": "npm --prefix apps/desktop/frontend run dev",
+    "web:build": "npm --prefix apps/desktop/frontend run build",
+    "desktop:icons": "(cd apps/desktop/src-tauri && npx @tauri-apps/cli@^2 icon ./icons/source.png)",
+    "desktop:dev": "(cd apps/desktop/src-tauri && npx @tauri-apps/cli@^2 dev)",
+    "desktop:build": "(cd apps/desktop/src-tauri && npx @tauri-apps/cli@^2 build)"
+  }
+}

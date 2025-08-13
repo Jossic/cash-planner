@@ -1,0 +1,28 @@
+[package]
+name = "desktop-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true, features = ["wry"] }
+tauri-plugin-shell = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-fs = { workspace = true }
+tauri-plugin-os = { workspace = true }
+tauri-plugin-updater = { workspace = true }
+tauri-plugin-store = { workspace = true }
+parking_lot = { workspace = true }
+once_cell = { workspace = true }
+domain = { path = "../../../crates/domain" }
+app = { path = "../../../crates/app" }
+infra = { path = "../../../crates/infra" }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
