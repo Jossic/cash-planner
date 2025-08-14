@@ -1,0 +1,12 @@
+// Pages exports for JLA Cash Planner
+export { DashboardPage } from './DashboardPage'
+export { OperationsPage } from './OperationsPage'
+export { DeclarationPage } from './DeclarationPage'
+export { TaxAnnualPage } from './TaxAnnualPage'
+export { SimulationsPage } from './SimulationsPage'
+export { InvoicesPage } from './InvoicesPage'
+export { ExpensesPage } from './ExpensesPage'
+export { VatPage } from './VatPage'
+export { UrssafPage } from './UrssafPage'
+export { SettingsPage } from './SettingsPage'
+export { EnhancedDashboardPage } from './EnhancedDashboardPage'

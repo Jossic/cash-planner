@@ -1,0 +1,1 @@
+export { DeclarationModal } from './DeclarationModal'

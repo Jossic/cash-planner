@@ -1,23 +1,618 @@
+/* Imports must come first */
 @import 'tailwindcss';
 
-@layer components {
-  .btn {
-    @apply px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer;
-  }
+/* ===========================
+   JLA CASH PLANNER DESIGN SYSTEM
+   Theme: Dark Nuanced & Professional
+   Inspiration: Stripe, Linear, Notion
+   =========================== */
+
+/* Force dark mode globally */
+html {
+  color-scheme: dark;
+}
+
+:root {
+  /* Typography */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
   
-  .btn-secondary {
-    @apply px-4 py-2 rounded bg-gray-200 text-gray-800 hover:bg-gray-300 transition-colors cursor-pointer;
-  }
+  /* ===========================
+     NUANCED DARK BACKGROUNDS
+     Base: Anthracite rather than pure black
+     =========================== */
+  --slate-950: #0f0f23;        /* Primary background - Deep navy slate */
+  --slate-900: #1a1a2e;        /* Secondary background - Sidebar */
+  --slate-850: #232347;        /* Elevated surfaces - Cards */
+  --slate-800: #2d2d54;        /* Interactive surfaces - Hover states */
+  --slate-700: #404071;        /* Borders and dividers */
+  --slate-600: #52538f;        /* Subtle accents */
   
-  .nav-link {
-    @apply px-3 py-2 rounded text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer;
-  }
+  /* ===========================
+     TEXT HIERARCHY
+     High contrast but not aggressive
+     =========================== */
+  --text-primary: #f1f5f9;     /* Primary text - Soft white */
+  --text-secondary: #cbd5e1;   /* Secondary text - Light slate */
+  --text-tertiary: #94a3b8;    /* Tertiary text - Medium slate */
+  --text-muted: #64748b;       /* Muted text - Darker slate */
+  --text-placeholder: #475569; /* Placeholder text */
   
+  /* ===========================
+     BUSINESS COLORS
+     Professional financial app palette
+     =========================== */
+  
+  /* Revenue Green - Success, Income */
+  --green-50: #f0fdf4;
+  --green-500: #10b981;        /* Main green */
+  --green-600: #059669;
+  --green-700: #047857;
+  --green-900: #064e3b;
+  --green-950: #022c22;
+  
+  /* Alert Orange - VAT, Warnings */
+  --orange-50: #fff7ed;
+  --orange-500: #f97316;       /* Main orange */
+  --orange-600: #ea580c;
+  --orange-700: #c2410c;
+  --orange-900: #7c2d12;
+  --orange-950: #431407;
+  
+  /* Professional Blue - URSSAF, Primary Actions */
+  --blue-50: #eff6ff;
+  --blue-500: #3b82f6;         /* Main blue */
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-900: #1e3a8a;
+  --blue-950: #172554;
+  
+  /* Danger Red - Errors, Debts */
+  --red-50: #fef2f2;
+  --red-500: #ef4444;          /* Main red */
+  --red-600: #dc2626;
+  --red-700: #b91c1c;
+  --red-900: #7f1d1d;
+  --red-950: #450a0a;
+  
+  /* Neutral Purple - Secondary metrics */
+  --purple-50: #faf5ff;
+  --purple-500: #8b5cf6;       /* Main purple */
+  --purple-600: #7c3aed;
+  --purple-700: #6d28d9;
+  --purple-900: #581c87;
+  --purple-950: #2e1065;
+  
+  /* ===========================
+     SHADOWS & ELEVATION
+     Subtle depth for modern feel
+     =========================== */
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --shadow-floating: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+  
+  /* ===========================
+     BORDER RADIUS
+     Modern, consistent rounding
+     =========================== */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  
+  /* ===========================
+     SPACING SCALE
+     Consistent rhythm
+     =========================== */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--slate-950);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* ===========================
+   GLOBAL BASE STYLES CONTINUED
+   =========================== */
+
+/* Enhanced scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--slate-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--slate-700);
+  border-radius: var(--radius-lg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--slate-600);
+}
+
+/* Selection styling */
+::selection {
+  background: var(--blue-500);
+  color: var(--text-primary);
+}
+
+/* Focus ring */
+*:focus {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ===========================
+   COMPONENT BASE CLASSES
+   =========================== */
+
+/* Card System */
+.card {
+  background-color: var(--slate-850);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card:hover {
+  border-color: var(--slate-600);
+  box-shadow: var(--shadow-elevated);
+}
+
+.card-header {
+  padding: var(--space-lg) var(--space-lg) var(--space-md);
+  border-bottom: 1px solid var(--slate-700);
+}
+
+.card-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.card-description {
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+  margin: var(--space-xs) 0 0;
+  line-height: 1.5;
+}
+
+.card-content {
+  padding: var(--space-lg);
+}
+
+/* Metric Card Variant */
+.metric-card {
+  background: linear-gradient(135deg, var(--slate-850) 0%, var(--slate-800) 100%);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-lg);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--blue-500), var(--purple-500));
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.metric-card:hover::before {
+  opacity: 1;
+}
+
+.metric-card:hover {
+  border-color: var(--slate-600);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+/* Button System */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  user-select: none;
+  
+  /* Primary Button - Professional blue */
+  background-color: var(--blue-600);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+}
+
+.btn:hover:not(:disabled) {
+  background-color: var(--blue-700);
+  box-shadow: var(--shadow-elevated);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-secondary {
+  background-color: var(--slate-700);
+  color: var(--text-primary);
+  border-color: var(--slate-600);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--slate-600);
+  border-color: var(--slate-500);
+}
+
+.btn-success {
+  background-color: var(--green-600);
+  color: var(--text-primary);
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: var(--green-700);
+}
+
+.btn-danger {
+  background-color: var(--red-600);
+  color: var(--text-primary);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--red-700);
+}
+
+.btn-outline {
+  background-color: transparent;
+  color: var(--text-secondary);
+  border-color: var(--slate-600);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background-color: var(--slate-800);
+  color: var(--text-primary);
+  border-color: var(--slate-500);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--slate-800);
+  color: var(--text-primary);
+}
+
+/* Button Sizes */
+.btn-sm {
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.8125rem;
+}
+
+.btn-lg {
+  padding: var(--space-lg) var(--space-xl);
+  font-size: 1rem;
+}
+
+/* Form Controls */
+.form-input {
+  width: 100%;
+  padding: var(--space-md);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  background-color: var(--slate-800);
+  color: var(--text-primary);
+  border: 1px solid var(--slate-700);
+  border-radius: var(--radius-md);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-input::placeholder {
+  color: var(--text-placeholder);
+}
+
+.form-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Form Labels */
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+  line-height: 1.4;
+}
+
+.form-label-required::after {
+  content: ' *';
+  color: var(--red-500);
+}
+
+/* Form Groups */
+.form-group {
+  margin-bottom: var(--space-lg);
+}
+
+/* Select Styling */
+.form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right var(--space-md) center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem;
+}
+
+/* Checkbox & Radio */
+.form-checkbox, .form-radio {
+  width: 1rem;
+  height: 1rem;
+  background-color: var(--slate-800);
+  border: 1px solid var(--slate-600);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+
+.form-checkbox:checked, .form-radio:checked {
+  background-color: var(--blue-600);
+  border-color: var(--blue-600);
+}
+
+.form-radio {
+  border-radius: 50%;
+}
+
+/* ===========================
+   ANIMATIONS & TRANSITIONS
+   Smooth, professional feel
+   =========================== */
+
+@keyframes fadeIn {
+  from { 
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-2px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(2px);
+  }
+}
+
+/* Animation Classes */
+.animate-in {
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, var(--slate-800) 25%, var(--slate-700) 50%, var(--slate-800) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+.animate-shake {
+  animation: shake 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Stagger delays */
+.animation-delay-75 { animation-delay: 75ms; }
+.animation-delay-150 { animation-delay: 150ms; }
+.animation-delay-225 { animation-delay: 225ms; }
+.animation-delay-300 { animation-delay: 300ms; }
+
+/* ===========================
+   UTILITY CLASSES
+   =========================== */
+
+/* Business Color Text */
+.text-revenue { color: var(--green-500); }
+.text-vat { color: var(--orange-500); }
+.text-urssaf { color: var(--blue-500); }
+.text-expense { color: var(--red-500); }
+.text-metric { color: var(--purple-500); }
+
+/* Business Color Backgrounds */
+.bg-revenue { background-color: var(--green-600); }
+.bg-vat { background-color: var(--orange-600); }
+.bg-urssaf { background-color: var(--blue-600); }
+.bg-expense { background-color: var(--red-600); }
+.bg-metric { background-color: var(--purple-600); }
+
+/* Status Indicators */
+.status-success {
+  color: var(--green-500);
+  background-color: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-warning {
+  color: var(--orange-500);
+  background-color: rgba(249, 115, 22, 0.1);
+  border: 1px solid rgba(249, 115, 22, 0.2);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-error {
+  color: var(--red-500);
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Loading States */
+.skeleton {
+  background: linear-gradient(90deg, var(--slate-800) 25%, var(--slate-700) 50%, var(--slate-800) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+  border-radius: var(--radius-md);
+}
+
+/* Typography */
+.text-display {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.text-heading {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.text-subheading {
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.text-body {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.text-small {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+.text-mono {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  letter-spacing: -0.025em;
+}
+
+/* Responsive helpers */
+@media (max-width: 768px) {
   .card {
-    @apply bg-white dark:bg-gray-800 rounded-lg shadow p-6;
+    border-radius: var(--radius-md);
   }
   
-  .input {
-    @apply w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  .btn {
+    padding: var(--space-sm) var(--space-md);
+  }
+  
+  .form-input {
+    padding: var(--space-sm);
   }
 }
