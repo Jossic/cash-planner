@@ -18,13 +18,13 @@ Est-ce que tu penses qu'un tel outil serait faisable ? Si oui, est-ce que tu pou
 - Liste des différentes pages de l'interface avec un wireframe pour chaque page
 - Liste de chacune des fonctionnalités
 - Détail sur l'architecture (clean archi: back: controller -> command/query handler -> gateway/repository, front: component -> hook/store -> use case -> gateways)
-- Stack: Tauri rust / qwik (tailwind)
+- Stack: Tauri rust / SolidJS (tailwind)
 - Tout autre choses qui serait nécessaire pour transmettre à un dev pour développer cette application
 
 
 ## Cahier des charges
 
-Yes—totally feasible. Below is a complete, dev-ready spec for a local, lightweight Tauri (Rust) + Qwik + Tailwind app to manage VAT on encaissements, URSSAF, cashflow, and monthly closings.
+Yes—totally feasible. Below is a complete, dev-ready spec for a local, lightweight Tauri (Rust) + SolidJS + Tailwind app to manage VAT on encaissements, URSSAF, cashflow, and monthly closings.
 
 1) Objectifs & règles métier
    TVA sur encaissements : TVA collectée basée sur payment_date des factures encaissées dans le mois M. TVA déductible basée sur payment_date des dépenses du mois M.
@@ -175,7 +175,7 @@ TVA/URSSAF CSV + justificatifs (zip), rapports PDF.
    4.1 Stack
    Desktop: Tauri (Rust 1.78+)
 
-UI: Qwik + Qwik City + TailwindCSS
+UI: SolidJS + Vite + TailwindCSS
 
 DB: SQLite (SQLx, migrations via sqlx-cli)
 
@@ -190,14 +190,14 @@ bash
 Copy
 Edit
 /apps
-/desktop   (Tauri + Qwik)
+/desktop   (Tauri + SolidJS)
 /crates
 /domain    (purs business: entities, value objects, usecases)
 /infra     (sqlite repo, bank parsers, pdf, keychain)
 /app       (application services: handlers, mapping)
 /packages
-/ui        (design system Qwik)
-// shared types via JSON schema (zod) du côté Qwik
+/ui        (design system SolidJS)
+// shared types via JSON schema (zod) du côté SolidJS
 Couche Rust
 domain
 
@@ -227,10 +227,10 @@ Adapters SQLite (SQLx) implémentant les repos.
 
 ## Implémentation (MVP livré dans ce repo)
 
-- Monorepo Rust + Tauri + Qwik conforme à l’archi ci-dessus.
+- Monorepo Rust + Tauri + SolidJS conforme à l'archi ci-dessus.
 - Backend Tauri v2 avec commandes: dashboard, factures, dépenses, assistants TVA/URSSAF, paramètres.
 - Infra SQLite locale (fichier `data.sqlite`, migrations SQLx au démarrage).
-- Front Qwik+Tailwind avec pages: Dashboard, Encaissements, Dépenses, TVA, URSSAF, Clôture, Paramètres.
+- Front SolidJS+Tailwind avec pages: Dashboard, Encaissements, Dépenses, TVA, URSSAF, Clôture, Paramètres.
 
 Pour lancer: voir `apps/desktop/README.md` (install deps puis `npx tauri dev`).
 
@@ -244,14 +244,14 @@ Controllers = commandes Tauri exposées #[tauri::command]
 
 Handlers (command/query) orchestrant les use cases.
 
-Couche Qwik
+Couche SolidJS
 Layering: component -> hook/store -> usecase -> gateways
 
 Gateways: appeller invoke() Tauri.
 
-Stores: Qwik Signals pour états (loading, error, data).
+Stores: SolidJS Signals pour états (loading, error, data).
 
-Routing: Qwik City.
+Routing: SolidJS Router.
 
 5) Modèle de données (SQLite)
    sql
@@ -408,7 +408,7 @@ tauri::Builder::default()
 .run(tauri::generate_context!())
 .expect("error while running tauri");
 }
-7.2 Qwik (gateway -> use case -> component)
+7.2 SolidJS (gateway -> use case -> component)
 ```ts
 // apps/desktop/src/gateways/tauri.ts
 import { invoke } from '@tauri-apps/api/tauri';
@@ -430,43 +430,50 @@ return computeVat(ym);
 
 ```tsx
 // apps/desktop/src/routes/vat/index.tsx
-import { component$, useSignal } from '@builder.io/qwik';
+import { createSignal } from 'solid-js';
 import { useComputeVat } from '../../usecases/useComputeVat';
 
-export default component$(() => {
-const ym = useSignal('2025-06');
-const report = useSignal<null | Awaited<ReturnType<typeof useComputeVat>>>(null);
-const loading = useSignal(false);
-const error = useSignal<string | null>(null);
+export default function VatPage() {
+  const [ym, setYm] = createSignal('2025-06');
+  const [report, setReport] = createSignal<null | Awaited<ReturnType<typeof useComputeVat>>>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
 
-const run = async () => {
-loading.value = true; error.value = null;
-try { report.value = await useComputeVat(ym.value); }
-catch (e:any) { error.value = e?.message ?? 'error'; }
-finally { loading.value = false; }
-};
+  const run = async () => {
+    setLoading(true); 
+    setError(null);
+    try { 
+      setReport(await useComputeVat(ym())); 
+    }
+    catch (e: any) { 
+      setError(e?.message ?? 'error'); 
+    }
+    finally { 
+      setLoading(false); 
+    }
+  };
 
-return (
-<div class="p-6 space-y-4">
-<div class="flex gap-2">
-<input class="input" value={ym.value} onInput$={(e:any)=> ym.value = e.target.value}/>
-<button class="btn" onClick$={run}>Compute VAT</button>
-</div>
-{loading.value && <div>Loading…</div>}
-{error.value && <div class="text-red-600">{error.value}</div>}
-{report.value && (
-<div class="grid grid-cols-4 gap-4">
-<Card label="Collectée" value={report.value.collected}/>
-<Card label="Déductible" value={report.value.deductible}/>
-<Card label="A payer" value={report.value.due}/>
-<Card label="Echéance" value={report.value.due_date}/>
-</div>
-)}
-</div>
-);
-});
+  return (
+    <div class="p-6 space-y-4">
+      <div class="flex gap-2">
+        <input class="input" value={ym()} onInput={(e) => setYm(e.target.value)}/>
+        <button class="btn" onClick={run}>Compute VAT</button>
+      </div>
+      {loading() && <div>Loading…</div>}
+      {error() && <div class="text-red-600">{error()}</div>}
+      {report() && (
+        <div class="grid grid-cols-4 gap-4">
+          <Card label="Collectée" value={report()!.collected}/>
+          <Card label="Déductible" value={report()!.deductible}/>
+          <Card label="A payer" value={report()!.due}/>
+          <Card label="Echéance" value={report()!.due_date}/>
+        </div>
+      )}
+    </div>
+  );
+}
 
-export const Card = (props:{label:string; value:any}) => (
+const Card = (props: {label: string; value: any}) => (
   <div class="rounded-2xl shadow p-4">
     <div class="text-sm opacity-70">{props.label}</div>
     <div class="text-2xl font-semibold">{String(props.value)}</div>

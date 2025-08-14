@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-JLA Cash Planner is a local-first desktop application for French freelancers to manage monthly VAT (on encaissements), URSSAF, cashflow, and monthly closings. Built with Tauri 2.0 (Rust backend) + Qwik (TypeScript frontend) + SQLite.
+JLA Cash Planner is a local-first desktop application for French freelancers to manage monthly VAT (on encaissements), URSSAF, cashflow, and monthly closings. Built with Tauri 2.0 (Rust backend) + SolidJS (TypeScript frontend) + SQLite.
 
 ## Development Commands
 
@@ -52,10 +52,10 @@ The codebase follows clean architecture with clear separation:
 - **`crates/app/`** - Application services and DTOs for Tauri commands  
 - **`crates/infra/`** - SQLite repositories and infrastructure adapters
 - **`apps/desktop/src-tauri/`** - Tauri backend with command handlers
-- **`apps/desktop/frontend/`** - Qwik frontend with components and stores
+- **`apps/desktop/frontend/`** - SolidJS frontend with components and stores
 
 ### Data Flow
-Frontend (Qwik) → Tauri Commands → App Service → Domain Use Cases → Repositories → SQLite
+Frontend (SolidJS) → Tauri Commands → App Service → Domain Use Cases → Repositories → SQLite
 
 ### Key Domain Entities
 - `Invoice` - Client invoices with VAT calculations (amounts in cents)
@@ -69,7 +69,7 @@ All monetary amounts are stored as **cents (integers)** to avoid floating-point 
 
 ## Frontend Structure
 
-### Qwik Architecture
+### SolidJS Architecture
 - **Routes**: `/apps/desktop/frontend/src/routes/` - File-based routing
 - **Components**: Shared components in `/apps/desktop/frontend/src/components/`
 - **Stores**: Context-based state management in `/apps/desktop/frontend/src/stores/`

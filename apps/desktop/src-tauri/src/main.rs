@@ -3,6 +3,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use app::{AppDeps, AppService, CreateInvoiceDto, CreateInvoiceSimpleDto, CreateWorkingDayDto, CreateSimulationDto, EnhancedDashboardData, CreateOperationDto, UpdateOperationDto};
+use bytes::Bytes;
 use chrono::NaiveDate;
 use domain::{
     DashboardSummary, Expense, MonthId, Settings, UrssafReport, VatReport, MonthRecap,
@@ -10,9 +11,9 @@ use domain::{
     WorkingDay, WorkingDaysStats, TaxSchedule, Simulation, SimulationResults, MonthlyKPI,
     DailyRateCalculation, AnnualIncomeProjection, ProvisionOptimization, WorkingPatternAnalysis,
     // Operation model
-    Operation, OperationSens, OperationStatus
+    Operation, OperationSens
 };
-use infra::connect_and_migrate;
+use infra::{connect_and_migrate, MinioService, MinioConfig, FileInfo, StorageStats};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
@@ -88,13 +89,17 @@ async fn cmd_prepare_urssaf(state: State<'_, AppState>, y: i32, m: u8) -> Result
     state.0.prepare_urssaf(MonthId { year: y, month: m as u32 }).await.map_err(|e| e.to_string())
 }
 
-fn data_dir<R: tauri::Runtime>(app: &tauri::App<R>) -> PathBuf {
-    app
-        .path()
-        .app_data_dir()
-        .or_else(|_| app.path().app_config_dir())
-        .unwrap_or_else(|_| std::env::current_dir().unwrap())
-        .join("data")
+fn data_dir<R: tauri::Runtime>(_app: &tauri::App<R>) -> PathBuf {
+    // Get the workspace root (repo root) by going up from src-tauri directory
+    std::env::current_dir()
+        .unwrap()
+        .parent()  // apps/desktop
+        .unwrap()
+        .parent()  // apps
+        .unwrap()
+        .parent()  // repo root
+        .unwrap()
+        .to_path_buf()
 }
 
 fn main() {
@@ -107,6 +112,12 @@ fn main() {
             tauri::async_runtime::block_on(async move {
                 let conn_str = format!("sqlite:{}", db_path.display());
                 let repos = connect_and_migrate(&conn_str).await.expect("db init");
+                
+                // Initialize MinIO service
+                let minio_config = MinioConfig::default();
+                let minio_service = MinioService::new(minio_config).await
+                    .expect("Failed to initialize MinIO service");
+                
                 let deps = AppDeps {
                     invoices: Arc::new(repos.invoices()),
                     expenses: Arc::new(repos.expenses()),
@@ -115,10 +126,13 @@ fn main() {
                     months: Arc::new(repos.months()),
                     // New dependencies
                     operations: Arc::new(repos.operations()),
+                    declarations: Arc::new(repos.declarations()),
                     working_days: Arc::new(repos.working_days()),
                     tax_schedules: Arc::new(repos.tax_schedules()),
                     simulations: Arc::new(repos.simulations()),
                     kpis: Arc::new(repos.kpis()),
+                    // External services
+                    minio_service: Arc::new(minio_service),
                 };
                 let service = AppService::new(deps);
                 app_handle.manage(AppState(Arc::new(service)));
@@ -169,14 +183,19 @@ fn main() {
             cmd_update_operation,
             cmd_delete_operation,
             cmd_list_operations,
-            cmd_list_operations_by_status,
             cmd_list_operations_by_sens,
             cmd_list_operations_by_encaissement_month,
             // V2 business logic commands
             cmd_get_dashboard_v2,
             cmd_prepare_vat_v2,
             cmd_prepare_urssaf_v2,
-            cmd_month_recap_v2
+            cmd_month_recap_v2,
+            // File upload commands
+            cmd_upload_justificatif,
+            cmd_upload_file_from_path,
+            cmd_delete_justificatif,
+            cmd_list_justificatifs_by_month,
+            cmd_get_storage_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -396,9 +415,8 @@ async fn cmd_analyze_working_patterns(
 /// Create a new operation (unified model for invoices and expenses)
 #[tauri::command]
 async fn cmd_create_operation(state: State<'_, AppState>, dto: CreateOperationDto) -> Result<String, String> {
-    let operation = dto.into_entity().map_err(|e| e.to_string())?;
-    let id = operation.id.to_string();
-    state.0.create_operation(operation).await.map_err(|e| e.to_string())?;
+    let id = uuid::Uuid::new_v4().to_string();
+    state.0.create_operation_from_dto(dto).await.map_err(|e| e.to_string())?;
     Ok(id)
 }
 
@@ -442,18 +460,6 @@ async fn cmd_list_operations(
     state.0.list_operations(month_filter).await.map_err(|e| e.to_string())
 }
 
-/// List operations by status (draft, confirmed, paid, cancelled)
-#[tauri::command]
-async fn cmd_list_operations_by_status(state: State<'_, AppState>, status: String) -> Result<Vec<Operation>, String> {
-    let operation_status = match status.as_str() {
-        "draft" => OperationStatus::Draft,
-        "confirmed" => OperationStatus::Confirmed,
-        "paid" => OperationStatus::Paid,
-        "cancelled" => OperationStatus::Cancelled,
-        _ => return Err("Statut invalide: doit être 'draft', 'confirmed', 'paid' ou 'cancelled'".into()),
-    };
-    state.0.list_operations_by_status(operation_status).await.map_err(|e| e.to_string())
-}
 
 /// List operations by sens (achat/vente) with optional month filter
 #[tauri::command]
@@ -512,4 +518,56 @@ async fn cmd_prepare_urssaf_v2(state: State<'_, AppState>, year: i32, month: u8)
 #[tauri::command]
 async fn cmd_month_recap_v2(state: State<'_, AppState>, year: i32, month: u8) -> Result<MonthRecap, String> {
     state.0.month_recap_v2(MonthId { year, month: month as u32 }).await.map_err(|e| e.to_string())
+}
+
+// ============ File Upload Commands ============
+
+/// Upload justificatif file to MinIO
+#[tauri::command]
+async fn cmd_upload_justificatif(
+    state: State<'_, AppState>, 
+    file_content: Vec<u8>, 
+    original_filename: String,
+    content_type: Option<String>
+) -> Result<String, String> {
+    let bytes = Bytes::from(file_content);
+    state.0.upload_justificatif(bytes, &original_filename, content_type).await.map_err(|e| e.to_string())
+}
+
+/// Upload file from path to MinIO (for drag & drop)
+#[tauri::command]
+async fn cmd_upload_file_from_path(
+    state: State<'_, AppState>,
+    file_path: String,
+    original_filename: String,
+    content_type: Option<String>
+) -> Result<String, String> {
+    // Read the file from the filesystem
+    let file_content = std::fs::read(&file_path)
+        .map_err(|e| format!("Erreur lecture fichier: {}", e))?;
+    
+    let bytes = Bytes::from(file_content);
+    state.0.upload_justificatif(bytes, &original_filename, content_type).await.map_err(|e| e.to_string())
+}
+
+/// Delete justificatif file from MinIO
+#[tauri::command] 
+async fn cmd_delete_justificatif(state: State<'_, AppState>, file_url: String) -> Result<(), String> {
+    state.0.delete_justificatif(&file_url).await.map_err(|e| e.to_string())
+}
+
+/// List justificatifs for a specific month
+#[tauri::command]
+async fn cmd_list_justificatifs_by_month(
+    state: State<'_, AppState>, 
+    year: i32, 
+    month: u8
+) -> Result<Vec<FileInfo>, String> {
+    state.0.list_justificatifs_by_month(year, month as u32).await.map_err(|e| e.to_string())
+}
+
+/// Get storage statistics 
+#[tauri::command]
+async fn cmd_get_storage_stats(state: State<'_, AppState>) -> Result<StorageStats, String> {
+    state.0.get_storage_stats().await.map_err(|e| e.to_string())
 }

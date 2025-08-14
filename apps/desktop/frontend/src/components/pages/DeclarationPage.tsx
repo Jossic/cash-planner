@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { Calendar, Calculator, FileText, Info } from 'lucide-react'
-import { useCurrentPeriod, useOperations } from '../../stores/useAppStore'
-import type { Operation, Period } from '../../types'
-import { cn } from '../../lib/utils'
+import { Calendar, Calculator, FileText, Info, AlertCircle } from 'lucide-react'
+import { useOperations } from '../../stores/useAppStore'
+import { useDeclarationPeriod } from '../../hooks/useDeclarationPeriod'
+import { MonthSelector } from '../ui/MonthSelector'
+import type { Operation } from '../../types'
 
 // Types pour les calculs de déclaration
 interface DeclarationCalculation {
-  period: Period
+  periodKey: string
   operations: Operation[]
   ventes: Operation[]
   achats: Operation[]
@@ -31,28 +32,30 @@ interface DeclarationCases {
 }
 
 export const DeclarationPage: React.FC = () => {
-  const currentPeriod = useCurrentPeriod()
-  const { operations, loadOperations, isLoading, error } = useOperations(currentPeriod.key)
+  const { selectedPeriod, setSelectedPeriod, availablePeriods, defaultPeriod, isDefaultPeriod } = useDeclarationPeriod()
+  const { operations, loadOperations, isLoading, error } = useOperations(selectedPeriod.periodKey)
   
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>(currentPeriod)
   const [calculation, setCalculation] = useState<DeclarationCalculation | null>(null)
   const [cases, setCases] = useState<DeclarationCases | null>(null)
 
   // Charger les opérations au changement de période
   useEffect(() => {
     loadOperations()
-  }, [selectedPeriod.key, loadOperations])
+  }, [selectedPeriod.periodKey, loadOperations])
 
   // Calculer la déclaration quand les opérations changent
   useEffect(() => {
     if (operations && operations.length > 0) {
-      const calc = calculateDeclaration(selectedPeriod, operations)
+      const calc = calculateDeclaration(selectedPeriod.periodKey, operations)
       setCalculation(calc)
       setCases(generateDeclarationCases(calc))
+    } else {
+      setCalculation(null)
+      setCases(null)
     }
-  }, [operations, selectedPeriod])
+  }, [operations, selectedPeriod.periodKey])
 
-  const calculateDeclaration = (period: Period, operations: Operation[]): DeclarationCalculation => {
+  const calculateDeclaration = (periodKey: string, operations: Operation[]): DeclarationCalculation => {
     const ventes = operations.filter(op => op.sens === 'vente')
     const achats = operations.filter(op => op.sens === 'achat')
     
@@ -65,12 +68,12 @@ export const DeclarationPage: React.FC = () => {
       
       if (vente.tva_sur_encaissements) {
         // TVA sur encaissements : vérifier date d'encaissement
-        if (vente.encaissement_date && vente.encaissement_date.startsWith(period.key)) {
+        if (vente.encaissement_date && vente.encaissement_date.startsWith(periodKey)) {
           includeInPeriod = true
         }
       } else {
         // TVA sur facturation : vérifier date d'opération
-        if (vente.date.startsWith(period.key)) {
+        if (vente.date.startsWith(periodKey)) {
           includeInPeriod = true
         }
       }
@@ -85,7 +88,7 @@ export const DeclarationPage: React.FC = () => {
     let tvaDeductible = 0
     
     achats.forEach(achat => {
-      if (achat.date.startsWith(period.key)) {
+      if (achat.date.startsWith(periodKey)) {
         tvaDeductible += achat.tva_cents
       }
     })
@@ -100,7 +103,7 @@ export const DeclarationPage: React.FC = () => {
     const urssafDue = urssafBNC + formation + taxeCMA
     
     return {
-      period,
+      periodKey,
       operations,
       ventes,
       achats,
@@ -172,17 +175,36 @@ export const DeclarationPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Période sélectionnée */}
+      {/* Sélecteur de période */}
       <div className="card">
         <div className="card-content">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <Calendar className="h-5 w-5 text-blue-400 mr-2" />
-              <h2 className="text-heading text-slate-200">Période</h2>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h2 className="text-heading text-slate-200 mb-2">Période de déclaration</h2>
+              {isDefaultPeriod && (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Info className="h-4 w-4" />
+                  <span>
+                    {defaultPeriod.reason === 'no_declarations' 
+                      ? 'Période suggérée (aucune déclaration précédente)' 
+                      : 'Période suivante basée sur vos déclarations'
+                    }
+                  </span>
+                </div>
+              )}
             </div>
-            <div className="text-right">
-              <p className="text-xl font-bold text-slate-100">{selectedPeriod.label}</p>
-              <p className="text-small text-slate-400">{operations?.length || 0} opérations</p>
+            
+            <div className="flex items-center gap-4">
+              <MonthSelector 
+                selectedPeriod={selectedPeriod}
+                availablePeriods={availablePeriods}
+                onPeriodChange={setSelectedPeriod}
+                showStatus={true}
+                className="min-w-0"
+              />
+              <div className="text-right">
+                <p className="text-slate-400 text-sm">{operations?.length || 0} opérations</p>
+              </div>
             </div>
           </div>
         </div>

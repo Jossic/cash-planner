@@ -15,3 +15,7 @@ tokio = { workspace = true }
 parking_lot = { workspace = true }
 async-trait = { workspace = true }
 domain = { path = "../domain" }
+# MinIO dependencies - using rust-s3 crate instead of AWS SDK
+rust-s3 = { workspace = true }
+mime_guess = { workspace = true }
+bytes = { workspace = true }

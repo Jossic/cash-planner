@@ -1,6 +1,6 @@
 # JLA Cash Planner – Desktop
 
-Local-first Tauri (Rust) + Qwik app to manage monthly VAT on encaissements, URSSAF, cashflow, and closings.
+Local-first Tauri (Rust) + SOLIDJS app to manage monthly VAT on encaissements, URSSAF, cashflow, and closings.
 
 ## Development
 
