@@ -753,6 +753,38 @@ pub fn compute_dashboard_v2(
     }
 }
 
+/// Annual tax declaration data for French BNC tax form (2042-C-PRO)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnnualTaxData {
+    pub year: i32,
+    pub total_revenue_ht_cents: i64,        // Total CA encaissé HT sur l'année
+    pub total_revenue_ttc_cents: i64,       // Total CA encaissé TTC sur l'année
+    pub total_expenses_cents: i64,          // Total charges déductibles
+    pub total_vat_collected_cents: i64,     // Total TVA collectée
+    pub total_vat_deductible_cents: i64,    // Total TVA déductible
+    pub net_vat_due_cents: i64,             // TVA nette due
+    pub total_urssaf_paid_cents: i64,       // Total URSSAF payé dans l'année
+    
+    // Cases spécifiques 2042-C-PRO
+    pub case_5hq: String,                   // Revenus BNC - Recettes brutes (HT)
+    pub case_5hh: String,                   // Charges déductibles
+    pub case_5iu: String,                   // Résultat BNC (5HQ - 5HH)
+    
+    // Informations complémentaires
+    pub months_worked: i32,                 // Nombre de mois d'activité
+    pub average_monthly_revenue: i64,       // CA moyen mensuel
+    pub monthly_breakdown: Vec<MonthlyTaxBreakdown>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonthlyTaxBreakdown {
+    pub month_id: MonthId,
+    pub revenue_ht_cents: i64,
+    pub expenses_cents: i64,
+    pub vat_due_cents: i64,
+    pub urssaf_due_cents: i64,
+}
+
 /// Compute month recap using unified Operation model
 pub fn compute_month_recap_v2(month: &MonthId, operations: &[Operation], settings: &Settings) -> MonthRecap {
     let vat = compute_vat_for_month_v2(month, operations);

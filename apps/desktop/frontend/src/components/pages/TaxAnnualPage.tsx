@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Calendar, FileText, Calculator, TrendingUp, AlertCircle, Download, ExternalLink } from 'lucide-react'
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 
 interface MonthlyTaxBreakdown {
   month_id: {
@@ -32,7 +32,7 @@ interface AnnualTaxData {
 
 /**
  * Page Déclaration d'Impôts Annuelle
- * Calcule et affiche les données pour la déclaration fiscale française BNC
+ * Calcule et affiche les données pour la déclaration fiscale auto-entrepreneur
  */
 export const TaxAnnualPage: React.FC = () => {
   const [taxData, setTaxData] = useState<AnnualTaxData | null>(null)
@@ -93,7 +93,7 @@ export const TaxAnnualPage: React.FC = () => {
               Déclaration d'Impôts
             </h1>
             <p className="text-body text-slate-400">
-              Assistant pour votre déclaration annuelle de revenus freelance BNC
+              Assistant pour votre déclaration annuelle de revenus auto-entrepreneur
             </p>
           </div>
           <div className="flex items-center gap-4">

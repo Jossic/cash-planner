@@ -11,6 +11,7 @@ import { UrssafPage } from './components/pages/UrssafPage'
 import { SettingsPage } from './components/pages/SettingsPage'
 import { SimulationsPage } from './components/pages/SimulationsPage'
 import { DeclarationPage } from './components/pages/DeclarationPage'
+import { TaxAnnualPage } from './components/pages/TaxAnnualPage'
 import type { RouteKey } from './types'
 
 function App() {
@@ -28,6 +29,8 @@ function App() {
         return <OperationsPage />
       case 'declaration':
         return <DeclarationPage />
+      case 'tax-annual':
+        return <TaxAnnualPage />
       case 'simulations':
         return <SimulationsPage />
       case 'invoices':

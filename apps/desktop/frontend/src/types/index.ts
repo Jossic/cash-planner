@@ -1,5 +1,5 @@
 // Route types - Mise à jour avec nouvelle route unifiée
-export type RouteKey = 'dashboard' | 'operations' | 'declaration' | 'invoices' | 'expenses' | 'simulations' | 'vat' | 'urssaf' | 'settings'
+export type RouteKey = 'dashboard' | 'operations' | 'declaration' | 'tax-annual' | 'invoices' | 'expenses' | 'simulations' | 'vat' | 'urssaf' | 'settings'
 
 // Period management
 export interface Period {

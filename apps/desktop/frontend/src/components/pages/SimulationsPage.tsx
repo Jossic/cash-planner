@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { TrendingUp, Calculator, BarChart3, Target, Lightbulb, ArrowRight } from 'lucide-react'
+import { TrendingUp, Calculator, BarChart3, Target, Lightbulb, ArrowRight, Calendar, Edit2, Save, X } from 'lucide-react'
 import { useAppStore, useCurrentPeriod } from '../../stores/useAppStore'
 import { formatEuros, addMonths } from '../../lib/utils'
 
@@ -14,11 +14,31 @@ interface SimulationScenario {
   duration: number
 }
 
+interface WorkingDaysPlan {
+  month: number
+  year: number
+  monthName: string
+  workingDays: number
+  holidays: number
+  dailyRate: number
+  plannedRevenue: number
+  isEditing: boolean
+}
+
+interface YearlyPlan {
+  year: number
+  totalWorkingDays: number
+  totalHolidays: number
+  averageDailyRate: number
+  projectedRevenue: number
+  workingDaysPerMonth: WorkingDaysPlan[]
+}
+
 export const SimulationsPage: React.FC = () => {
   const currentPeriod = useCurrentPeriod()
   const { settings } = useAppStore()
   
-  const [activeTab, setActiveTab] = useState<'cashflow' | 'scenarios' | 'goals'>('cashflow')
+  const [activeTab, setActiveTab] = useState<'cashflow' | 'scenarios' | 'goals' | 'planning'>('cashflow')
   
   const [simulation, setSimulation] = useState({
     monthlyRevenue: 5000,
@@ -27,6 +47,120 @@ export const SimulationsPage: React.FC = () => {
     urssafRate: settings.urssaf_rate / 100, // Convert from ppm
     duration: 12
   })
+
+  // Initialize yearly plan with current year + 1 (for next year planning)
+  const currentYear = new Date().getFullYear()
+  const planningYear = currentYear + 1
+  
+  const monthNames = [
+    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+  ]
+  
+  const getDefaultWorkingDays = (month: number, year: number): number => {
+    // Calculate working days (excluding weekends and common French holidays)
+    const date = new Date(year, month, 1)
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    let workingDays = 0
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      const currentDate = new Date(year, month, day)
+      const dayOfWeek = currentDate.getDay()
+      
+      // Skip weekends (Saturday = 6, Sunday = 0)
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        workingDays++
+      }
+    }
+    
+    // Subtract common holidays (simplified)
+    if (month === 0) workingDays -= 1 // New Year
+    if (month === 4) workingDays -= 3 // May holidays (1st, 8th, Ascension)
+    if (month === 6) workingDays -= 1 // July 14th
+    if (month === 7) workingDays -= 1 // August 15th
+    if (month === 10) workingDays -= 2 // November 1st and 11th
+    if (month === 11) workingDays -= 2 // Christmas period
+    
+    return Math.max(workingDays, 0)
+  }
+
+  const [yearlyPlan, setYearlyPlan] = useState<YearlyPlan>(() => {
+    const workingDaysPerMonth: WorkingDaysPlan[] = Array.from({ length: 12 }, (_, index) => {
+      const defaultWorkingDays = getDefaultWorkingDays(index, planningYear)
+      return {
+        month: index + 1,
+        year: planningYear,
+        monthName: monthNames[index],
+        workingDays: defaultWorkingDays,
+        holidays: 0,
+        dailyRate: 400, // Default daily rate
+        plannedRevenue: defaultWorkingDays * 400,
+        isEditing: false
+      }
+    })
+    
+    const totalWorkingDays = workingDaysPerMonth.reduce((sum, month) => sum + month.workingDays, 0)
+    const projectedRevenue = workingDaysPerMonth.reduce((sum, month) => sum + month.plannedRevenue, 0)
+    
+    return {
+      year: planningYear,
+      totalWorkingDays,
+      totalHolidays: 0,
+      averageDailyRate: 400,
+      projectedRevenue,
+      workingDaysPerMonth
+    }
+  })
+
+  // Functions for planning management
+  const updateWorkingDays = (monthIndex: number, workingDays: number) => {
+    setYearlyPlan(prev => {
+      const updated = { ...prev }
+      updated.workingDaysPerMonth[monthIndex].workingDays = workingDays
+      updated.workingDaysPerMonth[monthIndex].plannedRevenue = workingDays * updated.workingDaysPerMonth[monthIndex].dailyRate
+      
+      // Recalculate totals
+      updated.totalWorkingDays = updated.workingDaysPerMonth.reduce((sum, month) => sum + month.workingDays, 0)
+      updated.projectedRevenue = updated.workingDaysPerMonth.reduce((sum, month) => sum + month.plannedRevenue, 0)
+      updated.averageDailyRate = updated.projectedRevenue / updated.totalWorkingDays || 0
+      
+      return updated
+    })
+  }
+
+  const updateDailyRate = (monthIndex: number, dailyRate: number) => {
+    setYearlyPlan(prev => {
+      const updated = { ...prev }
+      updated.workingDaysPerMonth[monthIndex].dailyRate = dailyRate
+      updated.workingDaysPerMonth[monthIndex].plannedRevenue = updated.workingDaysPerMonth[monthIndex].workingDays * dailyRate
+      
+      // Recalculate totals
+      updated.projectedRevenue = updated.workingDaysPerMonth.reduce((sum, month) => sum + month.plannedRevenue, 0)
+      updated.averageDailyRate = updated.projectedRevenue / updated.totalWorkingDays || 0
+      
+      return updated
+    })
+  }
+
+  const updateHolidays = (monthIndex: number, holidays: number) => {
+    setYearlyPlan(prev => {
+      const updated = { ...prev }
+      updated.workingDaysPerMonth[monthIndex].holidays = holidays
+      
+      // Recalculate total holidays
+      updated.totalHolidays = updated.workingDaysPerMonth.reduce((sum, month) => sum + month.holidays, 0)
+      
+      return updated
+    })
+  }
+
+  const toggleEditMode = (monthIndex: number) => {
+    setYearlyPlan(prev => {
+      const updated = { ...prev }
+      updated.workingDaysPerMonth[monthIndex].isEditing = !updated.workingDaysPerMonth[monthIndex].isEditing
+      return updated
+    })
+  }
 
   const [scenarios] = useState<SimulationScenario[]>([
     {
@@ -145,7 +279,7 @@ export const SimulationsPage: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('goals')}
-            className={`px-6 py-3 text-sm font-medium rounded-tr-lg transition-colors ${
+            className={`px-6 py-3 text-sm font-medium transition-colors ${
               activeTab === 'goals'
                 ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 border-b-2 border-blue-600'
                 : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
@@ -154,6 +288,19 @@ export const SimulationsPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <Target className="h-4 w-4" />
               Objectifs & KPIs
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('planning')}
+            className={`px-6 py-3 text-sm font-medium rounded-tr-lg transition-colors ${
+              activeTab === 'planning'
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4" />
+              Planning {planningYear}
             </div>
           </button>
         </div>
@@ -484,6 +631,190 @@ export const SimulationsPage: React.FC = () => {
                       <li>• Maintenir un tampon de trésorerie de 3 mois de charges</li>
                     </ul>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'planning' && (
+            <div className="space-y-6">
+              {/* Résumé annuel */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-400">Total jours travaillés</div>
+                  <div className="text-2xl font-bold text-blue-400">{yearlyPlan.totalWorkingDays}</div>
+                </div>
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-400">Total congés</div>
+                  <div className="text-2xl font-bold text-orange-400">{yearlyPlan.totalHolidays}</div>
+                </div>
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-400">TJM moyen</div>
+                  <div className="text-2xl font-bold text-green-400">{yearlyPlan.averageDailyRate.toFixed(0)}€</div>
+                </div>
+                <div className="bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-400">CA prévisionnel {planningYear}</div>
+                  <div className="text-2xl font-bold text-purple-400">{formatEuros(yearlyPlan.projectedRevenue * 100)}</div>
+                </div>
+              </div>
+
+              {/* Tableau de planning mensuel */}
+              <div className="bg-slate-800 rounded-lg overflow-hidden">
+                <div className="p-4 border-b border-slate-700">
+                  <h4 className="font-semibold text-slate-100">
+                    Planning {planningYear} - Jours travaillés et revenus prévisionnels
+                  </h4>
+                  <p className="text-sm text-slate-400 mt-1">
+                    Cliquez sur les valeurs pour les modifier
+                  </p>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-700">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-slate-200">Mois</th>
+                        <th className="px-4 py-3 text-center text-slate-200">Jours travaillés</th>
+                        <th className="px-4 py-3 text-center text-slate-200">Congés</th>
+                        <th className="px-4 py-3 text-center text-slate-200">TJM (€)</th>
+                        <th className="px-4 py-3 text-right text-slate-200">CA prévisionnel</th>
+                        <th className="px-4 py-3 text-center text-slate-200">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {yearlyPlan.workingDaysPerMonth.map((month, index) => (
+                        <tr key={month.month} className="border-b border-slate-700 hover:bg-slate-750">
+                          <td className="px-4 py-3 font-medium text-slate-200">
+                            {month.monthName}
+                          </td>
+                          
+                          {/* Jours travaillés */}
+                          <td className="px-4 py-3 text-center">
+                            {month.isEditing ? (
+                              <input
+                                type="number"
+                                value={month.workingDays}
+                                onChange={(e) => updateWorkingDays(index, parseInt(e.target.value) || 0)}
+                                className="w-16 px-2 py-1 bg-slate-600 border border-slate-500 rounded text-center text-slate-100"
+                                min="0"
+                                max="31"
+                                autoFocus
+                              />
+                            ) : (
+                              <span 
+                                onClick={() => toggleEditMode(index)}
+                                className="cursor-pointer hover:bg-slate-600 px-2 py-1 rounded text-blue-400 font-medium"
+                              >
+                                {month.workingDays}
+                              </span>
+                            )}
+                          </td>
+                          
+                          {/* Congés */}
+                          <td className="px-4 py-3 text-center">
+                            {month.isEditing ? (
+                              <input
+                                type="number"
+                                value={month.holidays}
+                                onChange={(e) => updateHolidays(index, parseInt(e.target.value) || 0)}
+                                className="w-16 px-2 py-1 bg-slate-600 border border-slate-500 rounded text-center text-slate-100"
+                                min="0"
+                                max="31"
+                              />
+                            ) : (
+                              <span 
+                                onClick={() => toggleEditMode(index)}
+                                className="cursor-pointer hover:bg-slate-600 px-2 py-1 rounded text-orange-400"
+                              >
+                                {month.holidays}
+                              </span>
+                            )}
+                          </td>
+                          
+                          {/* TJM */}
+                          <td className="px-4 py-3 text-center">
+                            {month.isEditing ? (
+                              <input
+                                type="number"
+                                value={month.dailyRate}
+                                onChange={(e) => updateDailyRate(index, parseInt(e.target.value) || 0)}
+                                className="w-20 px-2 py-1 bg-slate-600 border border-slate-500 rounded text-center text-slate-100"
+                                min="0"
+                                step="50"
+                              />
+                            ) : (
+                              <span 
+                                onClick={() => toggleEditMode(index)}
+                                className="cursor-pointer hover:bg-slate-600 px-2 py-1 rounded text-green-400 font-medium"
+                              >
+                                {month.dailyRate}€
+                              </span>
+                            )}
+                          </td>
+                          
+                          {/* CA prévisionnel */}
+                          <td className="px-4 py-3 text-right">
+                            <span className="font-bold text-purple-400">
+                              {formatEuros(month.plannedRevenue * 100)}
+                            </span>
+                          </td>
+                          
+                          {/* Actions */}
+                          <td className="px-4 py-3 text-center">
+                            {month.isEditing ? (
+                              <button
+                                onClick={() => toggleEditMode(index)}
+                                className="p-1 text-green-400 hover:text-green-300"
+                                title="Sauvegarder"
+                              >
+                                <Save className="h-4 w-4" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => toggleEditMode(index)}
+                                className="p-1 text-slate-400 hover:text-slate-300"
+                                title="Modifier"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-slate-400">
+                  Les jours fériés français sont déjà déduits automatiquement. 
+                  Vous pouvez ajuster les jours travaillés selon vos besoins.
+                </div>
+                <div className="flex gap-2">
+                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    Exporter le planning
+                  </button>
+                  <button 
+                    onClick={() => {
+                      // Reset to default values
+                      setYearlyPlan(prev => ({
+                        ...prev,
+                        workingDaysPerMonth: prev.workingDaysPerMonth.map((month, index) => ({
+                          ...month,
+                          workingDays: getDefaultWorkingDays(index, planningYear),
+                          holidays: 0,
+                          dailyRate: 400,
+                          plannedRevenue: getDefaultWorkingDays(index, planningYear) * 400,
+                          isEditing: false
+                        }))
+                      }))
+                    }}
+                    className="px-4 py-2 bg-slate-600 text-slate-200 rounded-lg hover:bg-slate-500 transition-colors"
+                  >
+                    Réinitialiser
+                  </button>
                 </div>
               </div>
             </div>
