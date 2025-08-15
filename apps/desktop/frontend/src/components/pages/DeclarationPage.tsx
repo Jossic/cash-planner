@@ -37,8 +37,6 @@ interface DeclarationCases {
   case32: string // Total à payer
   
   // Cases URSSAF - Structure exacte du formulaire français
-  prestationsBIC: string      // 21.20% - Prestations de services (bic)
-  venteMarchandisesBIC: string // 12.30% - Vente de marchandises (bic)
   prestationsBNC: string      // 24.60% - Prestations de services (bnc)
   formationProfessionnelle: string // 0.30% - Formation prof. obligatoire
   taxeCMAVente: string        // 0.22% - Taxe cma vente obligatoire cas général
@@ -263,8 +261,6 @@ export const DeclarationPage: React.FC = () => {
       case32: tvaNetteAPayer.toString(), // Total à payer
       
       // Cases URSSAF - Structure exacte du formulaire français
-      prestationsBIC: '0', // 21.20% - Pas utilisé pour les freelancers BNC
-      venteMarchandisesBIC: '0', // 12.30% - Pas utilisé pour les prestations
       prestationsBNC: Math.round(calc.caEncaisse * 0.246 / 100).toString(), // 24.60%
       formationProfessionnelle: Math.round(calc.caEncaisse * 0.003 / 100).toString(), // 0.30%
       taxeCMAVente: '0', // 0.22% - Pas utilisé pour les prestations
@@ -612,28 +608,6 @@ export const DeclarationPage: React.FC = () => {
                     <h4 className="font-medium text-slate-300 mb-3">Cotisations, contributions et impôts</h4>
                     <div className="space-y-3">
                       <div className="grid grid-cols-1 gap-3">
-                        <div className="flex justify-between items-center py-2">
-                          <div className="flex-1">
-                            <span className="text-slate-300">Prestations de services (bic)</span>
-                            <span className="text-blue-400 ml-2">21,20 %</span>
-                          </div>
-                          <div className="flex items-center">
-                            <span className="bg-slate-700 px-3 py-1 rounded font-mono text-slate-200 w-16 text-center">{cases.prestationsBIC}</span>
-                            <span className="text-slate-400 ml-2">€</span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex justify-between items-center py-2">
-                          <div className="flex-1">
-                            <span className="text-slate-300">Vente de marchandises (bic)</span>
-                            <span className="text-blue-400 ml-2">12,30 %</span>
-                          </div>
-                          <div className="flex items-center">
-                            <span className="bg-slate-700 px-3 py-1 rounded font-mono text-slate-200 w-16 text-center">{cases.venteMarchandisesBIC}</span>
-                            <span className="text-slate-400 ml-2">€</span>
-                          </div>
-                        </div>
-                        
                         <div className="flex justify-between items-center py-2 bg-blue-900/20 px-3 rounded">
                           <div className="flex-1">
                             <span className="text-slate-200 font-medium">Prestations de services (bnc)</span>
@@ -690,13 +664,6 @@ export const DeclarationPage: React.FC = () => {
                         
                         <div className="mt-3 pt-3 border-t border-slate-700">
                           <div className="flex justify-between items-center">
-                            <span className="text-slate-400">Paiement(s) déjà effectué(s)</span>
-                            <div className="flex items-center">
-                              <span className="bg-slate-700 px-3 py-1 rounded font-mono text-slate-200">0</span>
-                              <span className="text-slate-400 ml-2">€</span>
-                            </div>
-                          </div>
-                          <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-600">
                             <span className="text-slate-200 font-bold text-lg">Total à payer</span>
                             <div className="flex items-center">
                               <span className="bg-green-900/30 border border-green-700 px-4 py-2 rounded font-mono text-green-400 font-bold text-xl">{cases.totalURSSAF}</span>
