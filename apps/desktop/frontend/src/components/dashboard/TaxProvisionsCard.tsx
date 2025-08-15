@@ -89,6 +89,7 @@ const TaxProvisionsCard: React.FC<TaxProvisionsCardProps> = ({
   // Generate default provisions based on current period if none provided
   const defaultProvisions: TaxProvision[] = React.useMemo(() => {
     if (provisions.length > 0) return provisions;
+    if (!currentPeriod || !currentPeriod.monthId) return [];
     
     const [year, month] = currentPeriod.monthId.split('-');
     const nextMonth = new Date(parseInt(year), parseInt(month), 1);

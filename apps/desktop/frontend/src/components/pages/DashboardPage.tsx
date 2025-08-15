@@ -515,7 +515,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           periods={dashboardData.periods.slice(-12)} 
           className="xl:col-span-2" 
         />
-        <TaxProvisionsCard currentPeriod={currentPeriod} />
+        <TaxProvisionsCard currentPeriod={currentPeriodData} />
       </div>
 
       {/* Alerts Panel */}
