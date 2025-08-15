@@ -23,7 +23,7 @@ function App() {
   const renderCurrentPage = () => {
     switch (currentRoute) {
       case 'dashboard':
-        return <Dashboard onNavigate={handleNavigate} />
+        return <DashboardPage onNavigate={handleNavigate} />
       case 'operations':
         return <OperationsPage />
       case 'declaration':
@@ -41,7 +41,7 @@ function App() {
       case 'settings':
         return <SettingsPage />
       default:
-        return <Dashboard onNavigate={handleNavigate} />
+        return <DashboardPage onNavigate={handleNavigate} />
     }
   }
 

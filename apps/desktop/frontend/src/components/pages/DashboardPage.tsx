@@ -4,7 +4,9 @@ import TreasuryTable from '../dashboard/TreasuryTable';
 import { CashflowChart } from '../dashboard/CashflowChart';
 import TaxProvisionsCard from '../dashboard/TaxProvisionsCard';
 import AlertsPanel, { generateSampleAlerts } from '../dashboard/AlertsPanel';
+import { invoke } from '@tauri-apps/api/core';
 import { useMultiPeriodDashboard, useCurrentPeriod, useAppStore } from '../../stores/useAppStore';
+import { TauriClient } from '../../lib/tauriClient';
 import type { MultiPeriodDashboardData, DashboardPeriodData, PeriodSelection } from '../../types/dashboard';
 import type { RouteKey } from '../../types';
 
@@ -177,78 +179,92 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     loadAllOperations();
   }, [selectedPeriods, loadOperationsForPeriod]);
   
-  // Get real dashboard data from the store
-  const dashboardData = React.useMemo(() => {
-    if (selectedPeriods.length === 0) {
-      console.log('⚠️ Aucune période sélectionnée');
-      return generateSampleData(); // Fallback to sample data
-    }
+  // Get real dashboard data from the backend
+  const [dashboardData, setDashboardData] = React.useState<MultiPeriodDashboardData | null>(null);
+  const [dataLoading, setDataLoading] = React.useState(false);
+
+  // Load dashboard data directly from Tauri backend
+  const loadDashboardData = React.useCallback(async () => {
+    if (selectedPeriods.length === 0) return;
     
+    setDataLoading(true);
     try {
-      console.log('🔄 Chargement des données pour périodes:', selectedPeriods);
-      const realData = getDashboardData(selectedPeriods);
-      console.log('📊 Dashboard data loaded:', realData);
+      console.log('🔄 Chargement des données dashboard depuis le backend pour:', selectedPeriods);
       
-      // Vérifier si nous avons des données réelles par période
+      const dashboardPeriods: DashboardPeriodData[] = [];
       let totalRevenue = 0;
       let totalExpenses = 0;
+      let totalVat = 0;
+      let totalUrssaf = 0;
       
-      selectedPeriods.forEach(periodKey => {
-        const periodData = realData.period_data?.[periodKey];
-        if (periodData) {
-          totalRevenue += periodData.encaissements_ht_cents || 0;
-          totalExpenses += periodData.depenses_ttc_cents || 0;
+      // Charger les données pour chaque période
+      for (const periodKey of selectedPeriods) {
+        const [year, month] = periodKey.split('-').map(Number);
+        
+        try {
+          // Appeler directement la commande Tauri avec la bonne signature
+          const periodDashboard = await invoke('cmd_dashboard', { month: year, m: month });
+          console.log(`📊 Données Tauri pour ${periodKey}:`, periodDashboard);
+          
+          const periodData: DashboardPeriodData = {
+            monthId: periodKey,
+            revenue: periodDashboard.encaissements_ht_cents,
+            expenses: periodDashboard.depenses_ttc_cents,
+            vatDue: periodDashboard.tva_due_cents,
+            urssafDue: periodDashboard.urssaf_due_cents,
+            available: periodDashboard.disponible_cents,
+            invoicesCount: periodDashboard.ventes_count || 0,
+            expensesCount: periodDashboard.achats_count || 0,
+          };
+          
+          dashboardPeriods.push(periodData);
+          totalRevenue += periodDashboard.encaissements_ht_cents;
+          totalExpenses += periodDashboard.depenses_ttc_cents;
+          totalVat += periodDashboard.tva_due_cents;
+          totalUrssaf += periodDashboard.urssaf_due_cents;
+        } catch (error) {
+          console.error(`❌ Erreur chargement ${periodKey}:`, error);
+          // Ajouter des données vides pour cette période
+          dashboardPeriods.push({
+            monthId: periodKey,
+            revenue: 0,
+            expenses: 0,
+            vatDue: 0,
+            urssafDue: 0,
+            available: 0,
+            invoicesCount: 0,
+            expensesCount: 0,
+          });
         }
-      });
+      }
       
-      console.log('💰 Total revenue found:', totalRevenue, 'Total expenses:', totalExpenses);
+      console.log('💰 Totaux calculés - CA:', totalRevenue, 'Dépenses:', totalExpenses);
       
-      // Toujours utiliser les vraies données, même si elles sont à zéro
-      const dashboardPeriods: DashboardPeriodData[] = selectedPeriods.map(periodKey => {
-        const periodData = realData.period_data?.[periodKey] || {
-          encaissements_ht_cents: 0,
-          depenses_ttc_cents: 0,
-          tva_due_cents: 0,
-          urssaf_due_cents: 0,
-          disponible_cents: 0,
-          ventes_count: 0,
-          achats_count: 0
-        };
-        
-        console.log(`📅 Données pour ${periodKey}:`, periodData);
-        
-        return {
-          monthId: periodKey,
-          revenue: periodData.encaissements_ht_cents,
-          expenses: periodData.depenses_ttc_cents,
-          vatDue: periodData.tva_due_cents,
-          urssafDue: periodData.urssaf_due_cents,
-          available: periodData.disponible_cents,
-          invoicesCount: periodData.ventes_count || 0,
-          expensesCount: periodData.achats_count || 0,
-        };
-      });
-      
-      const result = {
+      const result: MultiPeriodDashboardData = {
         periods: dashboardPeriods,
         yearlyOverview: {
-          totalRevenue: realData.yearly_summary?.total_revenue_cents || totalRevenue,
-          totalExpenses: realData.yearly_summary?.total_expenses_cents || totalExpenses,
-          totalVat: realData.yearly_summary?.total_vat_paid_cents || 0,
-          totalUrssaf: realData.yearly_summary?.total_urssaf_paid_cents || 0,
-          averageMonthlyRevenue: realData.yearly_summary?.average_monthly_revenue_cents || 0,
-          growthRate: realData.yearly_summary?.growth_rate || 0
+          totalRevenue,
+          totalExpenses,
+          totalVat,
+          totalUrssaf,
+          averageMonthlyRevenue: selectedPeriods.length > 0 ? Math.round(totalRevenue / selectedPeriods.length) : 0,
+          growthRate: 0 // TODO: calculer vs année précédente
         },
-        treasuryProjection: realData.treasury_projection || { currentCash: 0, projectedCash: {}, confidence: 'low' },
-        alerts: realData.alerts || []
-      } as MultiPeriodDashboardData;
+        treasuryProjection: { 
+          currentCash: dashboardPeriods[dashboardPeriods.length - 1]?.available || 0, 
+          projectedCash: {}, 
+          confidence: 'medium',
+          assumptionsUsed: ['Données réelles de la base']
+        },
+        alerts: []
+      };
       
       console.log('✅ Dashboard data final:', result);
-      return result;
+      setDashboardData(result);
     } catch (error) {
       console.error('❌ Erreur chargement dashboard:', error);
-      // En cas d'erreur, retourner des données vides plutôt que des données fictives
-      return {
+      // Fallback vers des données vides
+      setDashboardData({
         periods: selectedPeriods.map(periodKey => ({
           monthId: periodKey,
           revenue: 0,
@@ -267,17 +283,39 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           averageMonthlyRevenue: 0,
           growthRate: 0
         },
-        treasuryProjection: { currentCash: 0, projectedCash: {}, confidence: 'low' },
+        treasuryProjection: { currentCash: 0, projectedCash: {}, confidence: 'low', assumptionsUsed: [] },
         alerts: []
-      } as MultiPeriodDashboardData;
+      });
+    } finally {
+      setDataLoading(false);
     }
-  }, [selectedPeriods, getDashboardData]);
+  }, [selectedPeriods]);
+
+  // Charger les données au changement des périodes
+  React.useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
   
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => setIsLoading(false), 1000);
+    try {
+      await loadDashboardData();
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Gérer l'état de chargement ou pas de données
+  if (!dashboardData || dataLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-slate-400">Chargement des données du dashboard...</p>
+        </div>
+      </div>
+    );
+  }
   
   const currentPeriodData = dashboardData.periods[dashboardData.periods.length - 1];
   const previousPeriodData = dashboardData.periods[dashboardData.periods.length - 2];

@@ -369,7 +369,12 @@ export const useAppStore = create<AppStore>()(
         }
       },
       
-      getOperationsForPeriod: async (periodKey) => {
+      getOperationsForPeriod: (periodKey) => {
+        const state = get()
+        return state.operations[periodKey] || []
+      },
+      
+      loadOperationsForPeriod: async (periodKey) => {
         const state = get()
         
         // Si les opérations sont déjà en cache, les retourner
