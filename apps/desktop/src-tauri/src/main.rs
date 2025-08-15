@@ -20,6 +20,18 @@ use tauri::{Manager, State};
 struct AppState(Arc<AppService>);
 
 #[tauri::command]
+async fn cmd_open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    // Ouvrir l'URL avec le shell plugin de Tauri
+    use tauri_plugin_shell::ShellExt;
+    
+    app.shell()
+        .open(url, None)
+        .map_err(|e| format!("Impossible d'ouvrir l'URL: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
 async fn cmd_dashboard(state: State<'_, AppState>, month: i32, m: u8) -> Result<DashboardSummary, String> {
     state.0.get_dashboard(MonthId { year: month, month: m as u32 }).await.map_err(|e| e.to_string())
 }
@@ -155,6 +167,7 @@ fn main() {
             cmd_get_settings,
             cmd_save_settings,
             cmd_forecast,
+            cmd_open_url,
             // New commands for enhanced features
             cmd_get_enhanced_dashboard,
             cmd_create_working_day,

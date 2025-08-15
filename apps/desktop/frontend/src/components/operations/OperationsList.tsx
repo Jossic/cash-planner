@@ -5,13 +5,14 @@ import { Search, Filter, Trash2, Edit, FileText, ArrowUpDown } from 'lucide-reac
 import type { Operation } from '../../types'
 import { useCurrentPeriod } from '../../stores/useAppStore'
 import { cn } from '../../lib/utils'
+import { TauriClient } from '../../lib/tauriClient'
 import { invoke } from '@tauri-apps/api/core'
 
 interface OperationsListProps {
   showFilters?: boolean
 }
 
-type SortField = 'date' | 'montant_ht' | 'sens' | 'libelle'
+type SortField = 'date' | 'amount_ht' | 'sens' | 'libelle'
 type SortOrder = 'asc' | 'desc'
 type FilterSens = 'all' | 'vente' | 'achat'
 
@@ -33,17 +34,10 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
       setIsLoading(true)
       setError(null)
       
-      // Vérifier si on est dans Tauri
-      if (typeof window !== 'undefined' && (window as any).__TAURI_IPC__) {
-        const ops = await invoke<Operation[]>('cmd_list_operations', { month: null, m: null })
-        setOperations(ops || [])
-        console.log('📊 Opérations chargées dans OperationsList:', ops)
-      } else {
-        // Mode web - simulation avec données d'exemple
-        console.log('🌐 Mode web - simulation de chargement des opérations')
-        const mockOps: Operation[] = []
-        setOperations(mockOps)
-      }
+      console.log('📊 Chargement des opérations via TauriClient...')
+      const ops = await TauriClient.getOperations() // Charger toutes les opérations
+      setOperations(ops || [])
+      console.log('✅ Opérations chargées dans OperationsList:', ops.length, 'opérations')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur de chargement')
       console.error('❌ Erreur chargement opérations OperationsList:', err)
@@ -72,15 +66,10 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
   // Fonction de suppression
   const deleteOperation = async (operationId: string) => {
     try {
-      if (typeof window !== 'undefined' && (window as any).__TAURI_IPC__) {
-        await invoke('cmd_delete_operation', { id: operationId })
-        await loadOperations() // Recharger après suppression
-        console.log('✅ Opération supprimée:', operationId)
-      } else {
-        // Mode web - simulation
-        console.log('🌐 Mode web - simulation de suppression:', operationId)
-        await loadOperations()
-      }
+      console.log('🗑️ Suppression opération:', operationId)
+      await TauriClient.deleteOperation(operationId)
+      await loadOperations() // Recharger après suppression
+      console.log('✅ Opération supprimée:', operationId)
     } catch (err) {
       console.error('❌ Erreur suppression opération:', err)
       throw err
@@ -124,7 +113,7 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
           aVal = new Date(a.date_facture).getTime()
           bVal = new Date(b.date_facture).getTime()
           break
-        case 'montant_ht':
+        case 'amount_ht':
           aVal = a.montant_ht_cents
           bVal = b.montant_ht_cents
           break
@@ -170,11 +159,13 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
   const handleOpenFile = async (fileUrl: string) => {
     try {
       console.log('🔗 Ouverture du fichier:', fileUrl)
-      // Utiliser l'API web standard pour ouvrir l'URL
-      window.open(fileUrl, '_blank')
+      
+      // Utiliser notre commande Tauri personnalisée
+      await invoke('cmd_open_url', { url: fileUrl })
+      console.log('✅ Fichier ouvert avec Tauri')
     } catch (error) {
       console.error('❌ Erreur ouverture fichier:', error)
-      alert('Impossible d\'ouvrir le fichier')
+      alert('Impossible d\'ouvrir le fichier: ' + (error instanceof Error ? error.message : 'Erreur inconnue'))
     }
   }
   
@@ -289,7 +280,7 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
                   </th>
                   <th className="text-right py-3 px-2">
                     <button
-                      onClick={() => handleSort('montant_ht')}
+                      onClick={() => handleSort('amount_ht')}
                       className="flex items-center justify-end text-dark-200 hover:text-dark-100 font-medium w-full"
                     >
                       Montant HT

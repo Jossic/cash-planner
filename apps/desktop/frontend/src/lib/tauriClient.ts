@@ -79,17 +79,42 @@ export class TauriClient {
   // NOUVEAU MODÈLE UNIFIÉ - OPERATIONS
   // =============================================================================
 
+  // Transformation des données brutes du backend en Operation avec propriétés calculées
+  private static transformOperation(rawOp: any): Operation {
+    const operation = {
+      ...rawOp,
+      // Ajout des propriétés calculées pour compatibilité
+      get date() { return this.date_facture },
+      get encaissement_date() { return this.date_encaissement },
+      get amount_ht_cents() { return this.montant_ht_cents },
+      get amount_ttc_cents() { return this.montant_ttc_cents },
+      get tva_cents() { return this.montant_tva_cents }
+    } as Operation
+    
+    return operation
+  }
+
   // Operation operations - Nouveau modèle unifié
   static async getOperations(period?: string): Promise<Operation[]> {
-    return invoke('cmd_list_operations', { period })
+    let rawOperations: any[]
+    if (period) {
+      const [year, month] = period.split('-').map(Number)
+      rawOperations = await invoke('cmd_list_operations', { month: year, m: month })
+    } else {
+      rawOperations = await invoke('cmd_list_operations', { month: null, m: null })
+    }
+    
+    return rawOperations.map(op => TauriClient.transformOperation(op))
   }
 
   static async createOperation(dto: CreateOperationDto): Promise<Operation> {
-    return invoke('cmd_create_operation', { dto })
+    const rawOperation = await invoke('cmd_create_operation', { dto })
+    return TauriClient.transformOperation(rawOperation)
   }
 
   static async updateOperation(id: string, dto: Partial<CreateOperationDto>): Promise<Operation> {
-    return invoke('cmd_update_operation', { id, dto })
+    const rawOperation = await invoke('cmd_update_operation', { id, dto })
+    return TauriClient.transformOperation(rawOperation)
   }
 
   static async deleteOperation(id: string): Promise<void> {

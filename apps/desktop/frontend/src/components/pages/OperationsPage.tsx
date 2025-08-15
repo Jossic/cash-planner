@@ -7,10 +7,11 @@ import React, { useState, useEffect } from 'react'
 import { CompactOperationForm, OperationsList } from '../operations'
 import { Card } from '../ui/Card'
 import { TrendingUp, Zap, List, ArrowLeftRight } from 'lucide-react'
-import { useOperations } from '../../stores/useAppStore'
+import { useOperations, useCurrentPeriod } from '../../stores/useAppStore'
 
 export const OperationsPage: React.FC = () => {
-  const { operations, ventes, achats, isLoading, error, loadOperations } = useOperations()
+  const currentPeriod = useCurrentPeriod()
+  const { operations, ventes, achats, isLoading, error, loadOperations } = useOperations(currentPeriod.key)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   
   // Chargement initial
@@ -28,9 +29,9 @@ export const OperationsPage: React.FC = () => {
     totalOperations: operations?.length || 0,
     totalVentes: ventes?.length || 0,
     totalAchats: achats?.length || 0,
-    totalVentesHt: ventes?.reduce((sum, op) => sum + op.montant_ht, 0) || 0,
-    totalAchatsHt: achats?.reduce((sum, op) => sum + op.montant_ht, 0) || 0,
-    totalTva: operations?.reduce((sum, op) => sum + op.tva_cents, 0) || 0
+    totalVentesHt: ventes?.reduce((sum, op) => sum + (op.amount_ht_cents || 0), 0) || 0,
+    totalAchatsHt: achats?.reduce((sum, op) => sum + (op.amount_ht_cents || 0), 0) || 0,
+    totalTva: operations?.reduce((sum, op) => sum + (op.tva_cents || 0), 0) || 0
   }
   
   const handleOperationAdded = () => {

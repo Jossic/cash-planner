@@ -86,10 +86,11 @@ interface AppStore {
   operations: Record<string, Operation[]>  // period -> operations (ventes + achats)
   
   // Actions for operations
-  addOperation: (operation: CreateOperationDto) => void
-  updateOperation: (operationId: string, updates: Partial<Operation>) => void
-  deleteOperation: (operationId: string) => void
+  addOperation: (operation: CreateOperationDto) => Promise<void>
+  updateOperation: (operationId: string, updates: Partial<Operation>) => Promise<void>
+  deleteOperation: (operationId: string) => Promise<void>
   getOperationsForPeriod: (periodKey: string) => Operation[]
+  loadOperationsForPeriod: (periodKey: string) => Promise<Operation[]>
   getOperationsBySens: (periodKey: string, sens: 'achat' | 'vente') => Operation[]
   
   // Migration et compatibilité
@@ -151,13 +152,24 @@ interface AppStore {
 
 // Default settings
 const defaultSettings: AppSettings = {
-  urssaf_rate: 22,
+  urssaf_rate: 22, // Deprecated - kept for compatibility
   tva_declaration_day: 12,
   tva_payment_day: 20,
   urssaf_payment_day: 5,
   default_tva_rate: 20,
   company_name: '',
   siret: '',
+  
+  // URSSAF rates according to French regulations (2025)
+  urssaf_rates: {
+    prestations_bic: 21.20,         // Prestations de services BIC
+    vente_marchandises_bic: 12.30,  // Vente de marchandises BIC
+    prestations_bnc: 24.60,         // Prestations de services BNC
+    formation_professionnelle: 0.30, // Formation prof. obligatoire
+    taxe_cma_vente: 0.22,           // Taxe CMA vente obligatoire cas général
+    taxe_cma_prestation: 0.48       // Taxe CMA prestation oblig cas général
+  },
+  
   treasury_buffer_cents: 500000, // 5000€ de sécurité
   auto_generate_projections: true,
   projection_confidence_threshold: 0.7,
@@ -512,7 +524,7 @@ export const useAppStore = create<AppStore>()(
         const state = get()
         
         // Nouveau modèle : utiliser les operations si disponibles
-        const operations = state.getOperationsForPeriod(periodKey)
+        const operations = state.operations[periodKey] || []
         let vatCalculation: VatCalculation
         
         if (operations.length > 0) {
@@ -548,7 +560,7 @@ export const useAppStore = create<AppStore>()(
         const state = get()
         
         // Nouveau modèle : utiliser les operations si disponibles
-        const operations = state.getOperationsForPeriod(periodKey)
+        const operations = state.operations[periodKey] || []
         let urssafCalculation: UrssafCalculation
         
         if (operations.length > 0) {
@@ -738,7 +750,7 @@ export const useAppStore = create<AppStore>()(
         const state = get()
         
         // Nouveau modèle : utiliser les operations si disponibles
-        const operations = state.getOperationsForPeriod(periodKey)
+        const operations = state.operations[periodKey] || []
         
         let encaissements: number, depenses: number, vatCalc: VatCalculation, urssafCalc: UrssafCalculation
         let operationsCount = 0, ventesCount = 0, achatsCount = 0
@@ -753,20 +765,20 @@ export const useAppStore = create<AppStore>()(
             
             if (op.tva_sur_encaissements) {
               // TVA sur encaissements : date d'encaissement
-              included = !!op.encaissement_date && op.encaissement_date.startsWith(periodKey)
+              included = !!op.date_encaissement && op.date_encaissement.startsWith(periodKey)
             } else {
-              // TVA sur facturation : date de l'opération
-              included = op.date.startsWith(periodKey)
+              // TVA sur facturation : date de facturation
+              included = op.date_facture.startsWith(periodKey)
             }
             
-            return included ? sum + op.amount_ht_cents : sum
+            return included ? sum + op.montant_ht_cents : sum
           }, 0)
           
           // Calcul des dépenses (achats)
           const achats = operations.filter(op => op.sens === 'achat')
           depenses = achats
-            .filter(op => op.date.startsWith(periodKey))
-            .reduce((sum, op) => sum + op.amount_ttc_cents, 0)
+            .filter(op => op.date_facture.startsWith(periodKey))
+            .reduce((sum, op) => sum + op.montant_ttc_cents, 0)
           
           // Calculs TVA et URSSAF avec nouveau modèle
           vatCalc = calculateVatForOperations(periodKey, operations)
@@ -976,7 +988,7 @@ export const useOperations = (periodKey: string) => {
     updateOperation,
     deleteOperation,
     migratePeriodData,
-    getOperationsForPeriod,
+    loadOperationsForPeriod,
     getOperationsBySens
   } = useAppStore()
   
@@ -990,13 +1002,13 @@ export const useOperations = (periodKey: string) => {
     try {
       setIsLoading(true)
       setError(null)
-      await getOperationsForPeriod(periodKey)
+      await loadOperationsForPeriod(periodKey)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur de chargement')
     } finally {
       setIsLoading(false)
     }
-  }, [periodKey, getOperationsForPeriod, isLoading])
+  }, [periodKey, loadOperationsForPeriod, isLoading])
   
   const currentOperations = operations[periodKey] || []
   const ventes = currentOperations.filter(op => op.sens === 'vente')

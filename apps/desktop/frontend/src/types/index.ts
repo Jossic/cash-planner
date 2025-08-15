@@ -13,26 +13,28 @@ export interface Period {
 // NOUVEAU MODÈLE UNIFIÉ - OPÉRATION
 // =============================================================================
 
-// Opération simplifiée avec champs essentiels uniquement
+// Opération - correspond exact au backend Rust
 export interface Operation {
   id: string
-  date: string                     // Date de l'opération (facturation ou dépense)
-  encaissement_date?: string       // Date d'encaissement (si TVA sur encaissements)
-  montant_ht: number              // Montant HT en centimes
-  tva_rate: number                // Taux TVA (10 pour ventes, variable pour achats)
-  sens: 'vente' | 'achat'         // Type d'opération
-  tva_sur_encaissements: boolean  // true = TVA à l'encaissement, false = à la facturation
-  libelle?: string                // Description (optionnel)
-  justificatif_url?: string       // URL MinIO pour justificatif (optionnel)
-  
-  // Champs calculés automatiquement
-  amount_ht_cents: number         // = montant_ht (alias pour compatibilité)
-  amount_ttc_cents: number        // Calculé : montant_ht + TVA
-  tva_cents: number               // Calculé : montant_ht * tva_rate / 100
-  
-  // Métadonnées
+  date_facture: string            // Date de facturation (NaiveDate depuis le backend)
+  date_encaissement?: string      // Date d'encaissement (Option<NaiveDate>)
+  date_paiement?: string          // Date de paiement (pour achats)
+  sens: 'vente' | 'achat'         // Type d'opération (OperationSens)
+  montant_ht_cents: number        // Montant HT en centimes
+  montant_tva_cents: number       // Montant TVA en centimes (valeur directe)
+  montant_ttc_cents: number       // Montant TTC = HT + TVA
+  tva_sur_encaissements: boolean  // true = TVA à l'encaissement
+  libelle?: string                // Description optionnelle
+  justificatif_url?: string       // URL MinIO pour justificatif
   created_at: string              // Date de création
-  updated_at?: string             // Date de modification
+  updated_at: string              // Date de modification
+
+  // Propriétés calculées pour compatibilité avec l'ancien code
+  readonly date: string                    // = date_facture
+  readonly encaissement_date?: string      // = date_encaissement 
+  readonly amount_ht_cents: number         // = montant_ht_cents
+  readonly amount_ttc_cents: number        // = montant_ttc_cents
+  readonly tva_cents: number               // = montant_tva_cents
 }
 
 // Statuts d'opération simplifiés
@@ -340,13 +342,23 @@ export interface DashboardAlert {
 
 // Settings
 export interface AppSettings {
-  urssaf_rate: number           // En %
+  urssaf_rate: number           // En % (deprecated - utiliser urssaf_rates)
   tva_declaration_day: number   // 12
   tva_payment_day: number       // 20  
   urssaf_payment_day: number    // 5
   default_tva_rate: number      // 20
   company_name?: string
   siret?: string
+  
+  // URSSAF rates structure (configurable)
+  urssaf_rates: {
+    prestations_bic: number     // 21.20% - Prestations de services BIC
+    vente_marchandises_bic: number  // 12.30% - Vente de marchandises BIC
+    prestations_bnc: number     // 24.60% - Prestations de services BNC
+    formation_professionnelle: number // 0.30% - Formation prof. obligatoire
+    taxe_cma_vente: number      // 0.22% - Taxe CMA vente obligatoire cas général
+    taxe_cma_prestation: number // 0.48% - Taxe CMA prestation oblig cas général
+  }
   
   // New settings for enhanced features
   treasury_buffer_cents: number    // Montant de sécurité

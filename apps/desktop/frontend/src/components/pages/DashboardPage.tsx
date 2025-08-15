@@ -4,6 +4,7 @@ import TreasuryTable from '../dashboard/TreasuryTable';
 import { CashflowChart } from '../dashboard/CashflowChart';
 import TaxProvisionsCard from '../dashboard/TaxProvisionsCard';
 import AlertsPanel, { generateSampleAlerts } from '../dashboard/AlertsPanel';
+import { useMultiPeriodDashboard, useCurrentPeriod, useAppStore } from '../../stores/useAppStore';
 import type { MultiPeriodDashboardData, DashboardPeriodData, PeriodSelection } from '../../types/dashboard';
 import type { RouteKey } from '../../types';
 
@@ -109,12 +110,12 @@ const generateSampleData = (): MultiPeriodDashboardData => {
   };
   
   // Generate alerts
-  const currentPeriod = periods[periods.length - 1];
+  const currentPeriodSample = periods[periods.length - 1];
   const alerts = generateSampleAlerts({
-    monthId: currentPeriod.monthId,
-    vatDue: currentPeriod.vatDue,
-    urssafDue: currentPeriod.urssafDue,
-    available: currentPeriod.available
+    monthId: currentPeriodSample.monthId,
+    vatDue: currentPeriodSample.vatDue,
+    urssafDue: currentPeriodSample.urssafDue,
+    available: currentPeriodSample.available
   });
   
   return {
@@ -132,8 +133,145 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     range: 'month'
   });
   
-  // In a real app, this would come from a store or API call
-  const dashboardData = React.useMemo(() => generateSampleData(), []);
+  const currentPeriod = useCurrentPeriod();
+  const { selectedPeriods, setSelectedPeriods, getDashboardData } = useMultiPeriodDashboard();
+  const { loadOperationsForPeriod } = useAppStore((state) => ({ 
+    loadOperationsForPeriod: state.loadOperationsForPeriod
+  }));
+  
+  // Generate period list for the last 12 months
+  const periods = React.useMemo(() => {
+    const now = new Date();
+    const periodList = [];
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const periodKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      periodList.push(periodKey);
+    }
+    return periodList;
+  }, []);
+  
+  // Initialize selected periods if empty
+  React.useEffect(() => {
+    if (selectedPeriods.length === 0) {
+      setSelectedPeriods(periods);
+    }
+  }, [periods, selectedPeriods.length, setSelectedPeriods]);
+  
+  // Load operations data for all selected periods
+  React.useEffect(() => {
+    const loadAllOperations = async () => {
+      if (selectedPeriods.length === 0) return;
+      
+      try {
+        // Load operations for all selected periods
+        await Promise.all(
+          selectedPeriods.map(period => loadOperationsForPeriod(period))
+        );
+        console.log('✅ Operations loaded for all periods');
+      } catch (error) {
+        console.error('❌ Error loading operations:', error);
+      }
+    };
+    
+    loadAllOperations();
+  }, [selectedPeriods, loadOperationsForPeriod]);
+  
+  // Get real dashboard data from the store
+  const dashboardData = React.useMemo(() => {
+    if (selectedPeriods.length === 0) {
+      console.log('⚠️ Aucune période sélectionnée');
+      return generateSampleData(); // Fallback to sample data
+    }
+    
+    try {
+      console.log('🔄 Chargement des données pour périodes:', selectedPeriods);
+      const realData = getDashboardData(selectedPeriods);
+      console.log('📊 Dashboard data loaded:', realData);
+      
+      // Vérifier si nous avons des données réelles par période
+      let totalRevenue = 0;
+      let totalExpenses = 0;
+      
+      selectedPeriods.forEach(periodKey => {
+        const periodData = realData.period_data?.[periodKey];
+        if (periodData) {
+          totalRevenue += periodData.encaissements_ht_cents || 0;
+          totalExpenses += periodData.depenses_ttc_cents || 0;
+        }
+      });
+      
+      console.log('💰 Total revenue found:', totalRevenue, 'Total expenses:', totalExpenses);
+      
+      // Toujours utiliser les vraies données, même si elles sont à zéro
+      const dashboardPeriods: DashboardPeriodData[] = selectedPeriods.map(periodKey => {
+        const periodData = realData.period_data?.[periodKey] || {
+          encaissements_ht_cents: 0,
+          depenses_ttc_cents: 0,
+          tva_due_cents: 0,
+          urssaf_due_cents: 0,
+          disponible_cents: 0,
+          ventes_count: 0,
+          achats_count: 0
+        };
+        
+        console.log(`📅 Données pour ${periodKey}:`, periodData);
+        
+        return {
+          monthId: periodKey,
+          revenue: periodData.encaissements_ht_cents,
+          expenses: periodData.depenses_ttc_cents,
+          vatDue: periodData.tva_due_cents,
+          urssafDue: periodData.urssaf_due_cents,
+          available: periodData.disponible_cents,
+          invoicesCount: periodData.ventes_count || 0,
+          expensesCount: periodData.achats_count || 0,
+        };
+      });
+      
+      const result = {
+        periods: dashboardPeriods,
+        yearlyOverview: {
+          totalRevenue: realData.yearly_summary?.total_revenue_cents || totalRevenue,
+          totalExpenses: realData.yearly_summary?.total_expenses_cents || totalExpenses,
+          totalVat: realData.yearly_summary?.total_vat_paid_cents || 0,
+          totalUrssaf: realData.yearly_summary?.total_urssaf_paid_cents || 0,
+          averageMonthlyRevenue: realData.yearly_summary?.average_monthly_revenue_cents || 0,
+          growthRate: realData.yearly_summary?.growth_rate || 0
+        },
+        treasuryProjection: realData.treasury_projection || { currentCash: 0, projectedCash: {}, confidence: 'low' },
+        alerts: realData.alerts || []
+      } as MultiPeriodDashboardData;
+      
+      console.log('✅ Dashboard data final:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Erreur chargement dashboard:', error);
+      // En cas d'erreur, retourner des données vides plutôt que des données fictives
+      return {
+        periods: selectedPeriods.map(periodKey => ({
+          monthId: periodKey,
+          revenue: 0,
+          expenses: 0,
+          vatDue: 0,
+          urssafDue: 0,
+          available: 0,
+          invoicesCount: 0,
+          expensesCount: 0,
+        })),
+        yearlyOverview: {
+          totalRevenue: 0,
+          totalExpenses: 0,
+          totalVat: 0,
+          totalUrssaf: 0,
+          averageMonthlyRevenue: 0,
+          growthRate: 0
+        },
+        treasuryProjection: { currentCash: 0, projectedCash: {}, confidence: 'low' },
+        alerts: []
+      } as MultiPeriodDashboardData;
+    }
+  }, [selectedPeriods, getDashboardData]);
   
   const handleRefresh = () => {
     setIsLoading(true);
@@ -141,15 +279,15 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     setTimeout(() => setIsLoading(false), 1000);
   };
   
-  const currentPeriod = dashboardData.periods[dashboardData.periods.length - 1];
-  const previousPeriod = dashboardData.periods[dashboardData.periods.length - 2];
+  const currentPeriodData = dashboardData.periods[dashboardData.periods.length - 1];
+  const previousPeriodData = dashboardData.periods[dashboardData.periods.length - 2];
   
   // Calculate period-over-period changes
-  const revenueChange = previousPeriod ? 
-    ((currentPeriod.revenue - previousPeriod.revenue) / previousPeriod.revenue) * 100 : 0;
+  const revenueChange = previousPeriodData ? 
+    ((currentPeriodData.revenue - previousPeriodData.revenue) / previousPeriodData.revenue) * 100 : 0;
   
-  const availableChange = previousPeriod ? 
-    ((currentPeriod.available - previousPeriod.available) / Math.abs(previousPeriod.available || 1)) * 100 : 0;
+  const availableChange = previousPeriodData ? 
+    ((currentPeriodData.available - previousPeriodData.available) / Math.abs(previousPeriodData.available || 1)) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-slate-950 p-8 space-y-6 animate-fade-in">
@@ -164,7 +302,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           </h1>
           <p className="text-body text-slate-400 flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            {formatMonth(currentPeriod.monthId)}
+            {formatMonth(currentPeriodData.monthId)}
           </p>
         </div>
         
@@ -195,7 +333,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <div>
               <div className="text-sm text-slate-400 mb-1">CA du mois</div>
               <div className="text-2xl font-bold text-green-400 mb-1 font-mono">
-                {formatCurrency(currentPeriod.revenue)}
+                {formatCurrency(currentPeriodData.revenue)}
               </div>
               <div className={`text-sm flex items-center gap-1 ${
                 revenueChange >= 0 ? 'text-green-400' : 'text-red-400'
@@ -219,11 +357,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <div>
               <div className="text-sm text-slate-400 mb-1">Disponible</div>
               <div className={`text-2xl font-bold mb-1 font-mono ${
-                currentPeriod.available >= 0 
+                currentPeriodData.available >= 0 
                   ? 'text-blue-400' 
                   : 'text-red-400'
               }`}>
-                {formatCurrency(currentPeriod.available)}
+                {formatCurrency(currentPeriodData.available)}
               </div>
               <div className={`text-sm flex items-center gap-1 ${
                 availableChange >= 0 ? 'text-green-400' : 'text-red-400'
@@ -238,7 +376,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           </div>
           <div className="w-full bg-slate-700 rounded-full h-1.5 mt-3">
             <div className={`h-1.5 rounded-full ${
-              currentPeriod.available >= 0 ? 'bg-blue-500' : 'bg-red-500'
+              currentPeriodData.available >= 0 ? 'bg-blue-500' : 'bg-red-500'
             }`} style={{ width: '73%' }}></div>
           </div>
         </div>
@@ -249,7 +387,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <div>
               <div className="text-sm text-slate-400 mb-1">TVA due</div>
               <div className="text-2xl font-bold text-orange-400 mb-1 font-mono">
-                {formatCurrency(currentPeriod.vatDue)}
+                {formatCurrency(currentPeriodData.vatDue)}
               </div>
               <div className="text-sm text-slate-400">
                 Déclaration le 12
@@ -270,7 +408,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <div>
               <div className="text-sm text-slate-400 mb-1">URSSAF due</div>
               <div className="text-2xl font-bold text-blue-400 mb-1 font-mono">
-                {formatCurrency(currentPeriod.urssafDue)}
+                {formatCurrency(currentPeriodData.urssafDue)}
               </div>
               <div className="text-sm text-slate-400">
                 Paiement le 5
@@ -312,7 +450,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               </div>
               <div>
                 <h3 className="text-heading text-slate-200">Opérations</h3>
-                <p className="text-small text-slate-400">{currentPeriod.invoicesCount} ce mois</p>
+                <p className="text-small text-slate-400">{currentPeriodData.invoicesCount} ce mois</p>
               </div>
             </div>
           </div>
