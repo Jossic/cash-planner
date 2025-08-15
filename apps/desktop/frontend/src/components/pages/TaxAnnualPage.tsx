@@ -102,6 +102,7 @@ export const TaxAnnualPage: React.FC = () => {
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
               className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 text-sm"
             >
+              <option value={2025}>2025</option>
               <option value={2024}>2024</option>
               <option value={2023}>2023</option>
               <option value={2022}>2022</option>
