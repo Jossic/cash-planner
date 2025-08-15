@@ -202,8 +202,8 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         const [year, month] = periodKey.split('-').map(Number);
         
         try {
-          // Appeler directement la commande Tauri avec la bonne signature
-          const periodDashboard = await invoke('cmd_dashboard', { month: year, m: month });
+          // Utiliser cmd_get_dashboard_v2 pour le nouveau modèle Operations
+          const periodDashboard = await invoke('cmd_get_dashboard_v2', { month: year, m: month });
           console.log(`📊 Données Tauri pour ${periodKey}:`, periodDashboard);
           
           const periodData: DashboardPeriodData = {

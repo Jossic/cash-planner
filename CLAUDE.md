@@ -125,3 +125,35 @@ No specific test commands found in package.json. Add tests using:
 - Component files end in `.tsx`
 - All amounts internally handled as cents (divide by 100 for display)
 - Dates stored as ISO strings, parsed to NaiveDate in Rust
+
+## Development Workflow Rules
+
+### Git Commit Strategy
+**IMPORTANT**: Follow this commit strategy systematically:
+
+1. **Before starting any new modifications**: Commit current work with descriptive message
+2. **At each user feedback/request**: Commit previous work before starting new changes
+3. **When user reports issues**: Commit current state as WIP (Work In Progress)
+4. **Use descriptive commit messages** that explain what was attempted/fixed
+
+### Commit Message Format
+```bash
+git commit -m "$(cat <<'EOF'
+[type]: [description]
+
+- Specific change 1
+- Specific change 2
+- Issue found/fix attempted
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"
+```
+
+### Examples
+- `fix: dashboard data loading issues` (successful fix)
+- `wip: attempting dashboard data flow correction` (work in progress)
+- `feat: add TVA deductible section to declarations` (new feature)
+- `refactor: update operation property mapping` (code improvement)
