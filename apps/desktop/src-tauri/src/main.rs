@@ -11,7 +11,9 @@ use domain::{
     WorkingDay, WorkingDaysStats, TaxSchedule, Simulation, SimulationResults, MonthlyKPI,
     DailyRateCalculation, AnnualIncomeProjection, ProvisionOptimization, WorkingPatternAnalysis,
     // Operation model
-    Operation, OperationType
+    Operation, OperationType,
+    // Annual tax declaration
+    AnnualTaxData
 };
 use infra::{connect_and_migrate, MinioService, MinioConfig, FileInfo, StorageStats};
 use serde::{Deserialize, Serialize};
@@ -239,7 +241,9 @@ fn main() {
             cmd_upload_file_from_path,
             cmd_delete_justificatif,
             cmd_list_justificatifs_by_month,
-            cmd_get_storage_stats
+            cmd_get_storage_stats,
+            // Annual tax declaration
+            cmd_get_annual_tax_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -614,4 +618,10 @@ async fn cmd_list_justificatifs_by_month(
 #[tauri::command]
 async fn cmd_get_storage_stats(state: State<'_, AppState>) -> Result<StorageStats, String> {
     state.0.get_storage_stats().await.map_err(|e| e.to_string())
+}
+
+/// Get annual tax declaration data for a given year
+#[tauri::command]
+async fn cmd_get_annual_tax_data(state: State<'_, AppState>, year: i32) -> Result<AnnualTaxData, String> {
+    state.0.get_annual_tax_data(year).await.map_err(|e| e.to_string())
 }

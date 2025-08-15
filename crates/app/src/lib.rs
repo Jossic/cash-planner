@@ -2,6 +2,7 @@ use domain::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use infra::MinioService;
+use chrono::Datelike;
 
 #[derive(Clone)]
 pub struct AppDeps {
@@ -20,6 +21,7 @@ pub struct AppDeps {
     // External services
     pub minio_service: Arc<MinioService>,
 }
+
 
 #[derive(Clone)]
 pub struct AppService {
@@ -181,6 +183,120 @@ impl AppService {
         let settings = self.deps.config.load_settings().await?;
         let operations = self.deps.operations.list_operations(None).await?;
         Ok(compute_month_recap_v2(&month, &operations, &settings))
+    }
+
+    /// Get annual tax declaration data for French BNC freelancers
+    pub async fn get_annual_tax_data(&self, year: i32) -> DomainResult<AnnualTaxData> {
+        // Fetch all operations for the year
+        let operations = self.deps.operations.list_operations(None).await?;
+        
+        // Filter for the requested year based on payment dates (encaissements)
+        let year_operations: Vec<_> = operations
+            .into_iter()
+            .filter(|op| {
+                if let Some(payment_date) = op.payment_date {
+                    payment_date.year() == year
+                } else {
+                    // For unpaid operations, use invoice date as fallback
+                    op.invoice_date.year() == year
+                }
+            })
+            .collect();
+
+        // Calculate totals for sales (revenues)
+        let sales: Vec<_> = year_operations
+            .iter()
+            .filter(|op| matches!(op.operation_type, OperationType::Sale))
+            .collect();
+
+        let total_revenue_ht_cents: i64 = sales.iter().map(|op| op.amount_ht_cents).sum();
+        let total_revenue_ttc_cents: i64 = sales.iter().map(|op| op.amount_ttc_cents).sum();
+        let total_vat_collected_cents: i64 = sales.iter().map(|op| op.vat_amount_cents).sum();
+
+        // Calculate totals for purchases (expenses)
+        let purchases: Vec<_> = year_operations
+            .iter()
+            .filter(|op| matches!(op.operation_type, OperationType::Purchase))
+            .collect();
+
+        let total_expenses_cents: i64 = purchases.iter().map(|op| op.amount_ttc_cents).sum();
+        let total_vat_deductible_cents: i64 = purchases.iter().map(|op| op.vat_amount_cents).sum();
+
+        // Calculate net VAT due
+        let net_vat_due_cents = total_vat_collected_cents - total_vat_deductible_cents;
+
+        // Format currency amounts for tax form cases (in euros as strings)
+        let case_5hq = format!("{:.2}", total_revenue_ht_cents as f64 / 100.0);
+        let case_5hh = format!("{:.2}", total_expenses_cents as f64 / 100.0);
+        let case_5iu = format!("{:.2}", (total_revenue_ht_cents - total_expenses_cents) as f64 / 100.0);
+
+        // Create monthly breakdowns
+        let mut monthly_breakdown = Vec::new();
+        let mut months_worked = 0;
+        for month in 1..=12 {
+            let month_operations: Vec<_> = year_operations
+                .iter()
+                .filter(|op| {
+                    if let Some(payment_date) = op.payment_date {
+                        payment_date.month() == month as u32
+                    } else {
+                        op.invoice_date.month() == month as u32
+                    }
+                })
+                .collect();
+
+            let month_sales: Vec<_> = month_operations
+                .iter()
+                .filter(|op| matches!(op.operation_type, OperationType::Sale))
+                .collect();
+
+            let month_purchases: Vec<_> = month_operations
+                .iter()
+                .filter(|op| matches!(op.operation_type, OperationType::Purchase))
+                .collect();
+
+            let revenue_ht_cents: i64 = month_sales.iter().map(|op| op.amount_ht_cents).sum();
+            let expenses_cents: i64 = month_purchases.iter().map(|op| op.amount_ttc_cents).sum();
+            let vat_due_cents: i64 = month_sales.iter().map(|op| op.vat_amount_cents).sum::<i64>() -
+                                     month_purchases.iter().map(|op| op.vat_amount_cents).sum::<i64>();
+
+            // Count as working month if there's any revenue
+            if revenue_ht_cents > 0 {
+                months_worked += 1;
+            }
+
+            monthly_breakdown.push(MonthlyTaxBreakdown {
+                month_id: MonthId { year, month: month as u32 },
+                revenue_ht_cents,
+                expenses_cents,
+                vat_due_cents,
+                urssaf_due_cents: 0, // Would need URSSAF calculation logic
+            });
+        }
+
+        // Calculate average monthly revenue
+        let average_monthly_revenue = if months_worked > 0 {
+            total_revenue_ht_cents / months_worked as i64
+        } else {
+            0
+        };
+
+        Ok(AnnualTaxData {
+            year,
+            total_revenue_ht_cents,
+            total_revenue_ttc_cents,
+            total_expenses_cents,
+            total_vat_collected_cents,
+            total_vat_deductible_cents,
+            net_vat_due_cents,
+            total_urssaf_paid_cents: 0, // Would need URSSAF calculation
+            case_5hq,
+            case_5hh,
+            case_5iu,
+            months_worked,
+            average_monthly_revenue,
+            monthly_breakdown,
+        })
     }
 }
 

@@ -1,11 +1,85 @@
-import React from 'react'
-import { Calendar, FileText, Calculator, TrendingUp, AlertCircle } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Calendar, FileText, Calculator, TrendingUp, AlertCircle, Download, ExternalLink } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/tauri'
+
+interface MonthlyTaxBreakdown {
+  month_id: {
+    year: number
+    month: number
+  }
+  revenue_ht_cents: number
+  expenses_cents: number
+  vat_due_cents: number
+  urssaf_due_cents: number
+}
+
+interface AnnualTaxData {
+  year: number
+  total_revenue_ht_cents: number
+  total_revenue_ttc_cents: number
+  total_expenses_cents: number
+  total_vat_collected_cents: number
+  total_vat_deductible_cents: number
+  net_vat_due_cents: number
+  total_urssaf_paid_cents: number
+  case_5hq: string
+  case_5hh: string
+  case_5iu: string
+  months_worked: number
+  average_monthly_revenue: number
+  monthly_breakdown: MonthlyTaxBreakdown[]
+}
 
 /**
  * Page Déclaration d'Impôts Annuelle
- * Nouvelle page intégrée dans la navigation simplifiée
+ * Calcule et affiche les données pour la déclaration fiscale française BNC
  */
 export const TaxAnnualPage: React.FC = () => {
+  const [taxData, setTaxData] = useState<AnnualTaxData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedYear, setSelectedYear] = useState(2024)
+
+  const formatCurrency = (amountInCents: number): string => {
+    return new Intl.NumberFormat('fr-FR', {
+      style: 'currency',
+      currency: 'EUR',
+    }).format(amountInCents / 100)
+  }
+
+  const fetchAnnualTaxData = async (year: number) => {
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await invoke<AnnualTaxData>('cmd_get_annual_tax_data', { year })
+      setTaxData(data)
+    } catch (err) {
+      console.error('Erreur lors du chargement des données fiscales:', err)
+      setError(err as string)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchAnnualTaxData(selectedYear)
+  }, [selectedYear])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 p-8 flex items-center justify-center">
+        <div className="text-slate-400">Chargement des données fiscales...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-950 p-8 flex items-center justify-center">
+        <div className="text-red-400">Erreur: {error}</div>
+      </div>
+    )
+  }
   return (
     <div className="min-h-screen bg-slate-950 p-8 animate-fade-in">
       {/* Modern Header */}
@@ -19,12 +93,23 @@ export const TaxAnnualPage: React.FC = () => {
               Déclaration d'Impôts
             </h1>
             <p className="text-body text-slate-400">
-              Assistant pour votre déclaration annuelle de revenus freelance
+              Assistant pour votre déclaration annuelle de revenus freelance BNC
             </p>
           </div>
-          <div className="text-right">
-            <div className="text-sm font-medium text-slate-300">Année fiscale 2024</div>
-            <div className="text-xs text-slate-500">Échéance: Mai 2025</div>
+          <div className="flex items-center gap-4">
+            <select 
+              value={selectedYear} 
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 text-sm"
+            >
+              <option value={2024}>2024</option>
+              <option value={2023}>2023</option>
+              <option value={2022}>2022</option>
+            </select>
+            <div className="text-right">
+              <div className="text-sm font-medium text-slate-300">Année fiscale {selectedYear}</div>
+              <div className="text-xs text-slate-500">Échéance: Mai {selectedYear + 1}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -86,56 +171,145 @@ export const TaxAnnualPage: React.FC = () => {
         <div className="metric-card animate-in" style={{ animationDelay: '100ms' }}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-2xl font-bold text-green-400 mb-1 font-mono">45,250.00 €</div>
-              <div className="text-sm text-slate-400">Revenus bruts 2024</div>
+              <div className="text-2xl font-bold text-green-400 mb-1 font-mono">
+                {taxData ? formatCurrency(taxData.total_revenue_ht_cents) : '0,00 €'}
+              </div>
+              <div className="text-sm text-slate-400">Revenus bruts {selectedYear}</div>
+              {taxData && (
+                <div className="text-xs text-slate-500 mt-1">
+                  {taxData.months_worked} mois travaillé{taxData.months_worked > 1 ? 's' : ''}
+                </div>
+              )}
             </div>
             <div className="w-12 h-12 bg-green-500/20 rounded-lg flex items-center justify-center">
               <TrendingUp className="h-6 w-6 text-green-400" />
             </div>
-          </div>
-          <div className="w-full bg-slate-700 rounded-full h-1.5 mt-3">
-            <div className="bg-green-500 h-1.5 rounded-full" style={{ width: '85%' }}></div>
           </div>
         </div>
 
         <div className="metric-card animate-in" style={{ animationDelay: '200ms' }}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-2xl font-bold text-red-400 mb-1 font-mono">12,180.50 €</div>
+              <div className="text-2xl font-bold text-red-400 mb-1 font-mono">
+                {taxData ? formatCurrency(taxData.total_expenses_cents) : '0,00 €'}
+              </div>
               <div className="text-sm text-slate-400">Charges déductibles</div>
+              {taxData && (
+                <div className="text-xs text-slate-500 mt-1">
+                  Moyenne: {formatCurrency(taxData.average_monthly_revenue)}/mois
+                </div>
+              )}
             </div>
             <div className="w-12 h-12 bg-red-500/20 rounded-lg flex items-center justify-center">
               <div className="text-red-400 text-xl font-bold">↓</div>
             </div>
-          </div>
-          <div className="w-full bg-slate-700 rounded-full h-1.5 mt-3">
-            <div className="bg-red-500 h-1.5 rounded-full" style={{ width: '35%' }}></div>
           </div>
         </div>
 
         <div className="metric-card animate-in" style={{ animationDelay: '300ms' }}>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-2xl font-bold text-blue-400 mb-1 font-mono">33,069.50 €</div>
+              <div className="text-2xl font-bold text-blue-400 mb-1 font-mono">
+                {taxData ? formatCurrency(taxData.total_revenue_ht_cents - taxData.total_expenses_cents) : '0,00 €'}
+              </div>
               <div className="text-sm text-slate-400">Bénéfice imposable</div>
+              <div className="text-xs text-slate-500 mt-1">
+                Revenus - Charges
+              </div>
             </div>
             <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center">
               <Calculator className="h-6 w-6 text-blue-400" />
             </div>
           </div>
-          <div className="w-full bg-slate-700 rounded-full h-1.5 mt-3">
-            <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: '73%' }}></div>
+        </div>
+      </div>
+
+      {/* Guide de déclaration 2042-C-PRO */}
+      <div className="card mb-8 animate-in" style={{ animationDelay: '400ms' }}>
+        <div className="card-header">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center mr-3">
+                <FileText className="h-4 w-4 text-blue-400" />
+              </div>
+              <div>
+                <h3 className="card-title">Formulaire 2042-C-PRO - BNC</h3>
+                <p className="card-description">Cases à remplir pour votre déclaration</p>
+              </div>
+            </div>
+            <button className="btn btn-outline">
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Ouvrir le formulaire
+            </button>
+          </div>
+        </div>
+        <div className="card-content">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/20">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-green-300">Case 5HQ - Recettes BNC</h4>
+                  <span className="text-xs text-green-400 bg-green-500/20 px-2 py-1 rounded">Principal</span>
+                </div>
+                <div className="text-2xl font-bold text-green-400 mb-1">
+                  {taxData ? formatCurrency(taxData.total_revenue_ht_cents) : '0,00 €'}
+                </div>
+                <p className="text-xs text-green-400/70">
+                  Total des recettes encaissées en {selectedYear} (BNC non commerciales)
+                </p>
+              </div>
+
+              <div className="p-4 bg-red-500/10 rounded-lg border border-red-500/20">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-red-300">Case 5HH - Frais professionnels</h4>
+                  <span className="text-xs text-red-400 bg-red-500/20 px-2 py-1 rounded">Déduction</span>
+                </div>
+                <div className="text-2xl font-bold text-red-400 mb-1">
+                  {taxData ? formatCurrency(taxData.total_expenses_cents) : '0,00 €'}
+                </div>
+                <p className="text-xs text-red-400/70">
+                  Frais professionnels déductibles (au réel)
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-blue-300">Case 5IU - Bénéfice (ou déficit)</h4>
+                  <span className="text-xs text-blue-400 bg-blue-500/20 px-2 py-1 rounded">Résultat</span>
+                </div>
+                <div className="text-2xl font-bold text-blue-400 mb-1">
+                  {taxData ? formatCurrency(taxData.total_revenue_ht_cents - taxData.total_expenses_cents) : '0,00 €'}
+                </div>
+                <p className="text-xs text-blue-400/70">
+                  Bénéfice imposable (Case 5HQ - Case 5HH)
+                </p>
+              </div>
+
+              <div className="p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
+                <h4 className="text-sm font-medium text-purple-300 mb-2">Informations complémentaires</h4>
+                <div className="text-xs text-purple-400/70 space-y-1">
+                  <div>• Régime BNC (Bénéfices Non Commerciaux)</div>
+                  <div>• Frais au réel (pas d'abattement forfaitaire)</div>
+                  <div>• Revenus sur base "encaissements-décaissements"</div>
+                  {taxData && (
+                    <div>• {taxData.months_worked} mois d'activité sur {selectedYear}</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Actions disponibles */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="card animate-in" style={{ animationDelay: '400ms' }}>
+        <div className="card animate-in" style={{ animationDelay: '500ms' }}>
           <div className="card-header">
             <div className="flex items-center">
               <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center mr-3">
-                <FileText className="h-4 w-4 text-green-400" />
+                <Download className="h-4 w-4 text-green-400" />
               </div>
               <div>
                 <h3 className="card-title">Export comptable</h3>
@@ -145,49 +319,49 @@ export const TaxAnnualPage: React.FC = () => {
           </div>
           <div className="card-content">
             <p className="text-sm text-slate-400 mb-4">
-              Générez un export détaillé de toutes vos opérations 2024 au format Excel/PDF.
+              Générez un export détaillé de toutes vos opérations {selectedYear} au format Excel/PDF.
             </p>
             <button className="btn btn-success w-full">
-              <FileText className="h-4 w-4 mr-2" />
+              <Download className="h-4 w-4 mr-2" />
               Générer l'export
             </button>
           </div>
         </div>
 
-        <div className="card animate-in" style={{ animationDelay: '500ms' }}>
+        <div className="card animate-in" style={{ animationDelay: '600ms' }}>
           <div className="card-header">
             <div className="flex items-center">
               <div className="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center mr-3">
                 <Calculator className="h-4 w-4 text-purple-400" />
               </div>
               <div>
-                <h3 className="card-title">Simulateur fiscal</h3>
-                <p className="card-description">Estimez votre impôt sur le revenu</p>
+                <h3 className="card-title">Détail mensuel</h3>
+                <p className="card-description">Répartition par mois</p>
               </div>
             </div>
           </div>
           <div className="card-content">
             <p className="text-sm text-slate-400 mb-4">
-              Simulation basée sur vos revenus et charges réels pour anticiper votre imposition.
+              Consultez la répartition mensuelle de vos revenus et charges pour {selectedYear}.
             </p>
             <button className="btn btn-outline w-full">
-              <Calculator className="h-4 w-4 mr-2" />
-              Lancer la simulation
+              <Calendar className="h-4 w-4 mr-2" />
+              Voir le détail
             </button>
           </div>
         </div>
       </div>
 
-      {/* Alertes et conseils */}
-      <div className="card animate-in" style={{ animationDelay: '600ms' }}>
+      {/* Rappels fiscaux BNC */}
+      <div className="card animate-in" style={{ animationDelay: '700ms' }}>
         <div className="card-header">
           <div className="flex items-center">
             <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center mr-3">
               <AlertCircle className="h-4 w-4 text-yellow-400" />
             </div>
             <div>
-              <h3 className="card-title">Conseils fiscaux</h3>
-              <p className="card-description">Optimisations possibles pour 2024</p>
+              <h3 className="card-title">Rappels fiscaux BNC</h3>
+              <p className="card-description">Points importants pour votre déclaration {selectedYear}</p>
             </div>
           </div>
         </div>
@@ -195,36 +369,48 @@ export const TaxAnnualPage: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-start p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
               <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center mr-3 mt-0.5">
-                <span className="text-white text-xs font-bold">💡</span>
+                <span className="text-white text-xs font-bold">📅</span>
               </div>
               <div>
-                <h4 className="text-sm font-medium text-blue-300 mb-1">Frais de repas</h4>
+                <h4 className="text-sm font-medium text-blue-300 mb-1">Principe des encaissements</h4>
                 <p className="text-xs text-blue-400/70">
-                  Vous pouvez déduire 4,85€ par repas pris hors domicile dans le cadre professionnel.
+                  En BNC, seuls les revenus effectivement encaissés en {selectedYear} sont à déclarer, même si facturés avant.
                 </p>
               </div>
             </div>
 
             <div className="flex items-start p-3 bg-green-500/10 rounded-lg border border-green-500/20">
               <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mr-3 mt-0.5">
-                <span className="text-white text-xs font-bold">📱</span>
+                <span className="text-white text-xs font-bold">📊</span>
               </div>
               <div>
-                <h4 className="text-sm font-medium text-green-300 mb-1">Équipement informatique</h4>
+                <h4 className="text-sm font-medium text-green-300 mb-1">Frais au réel</h4>
                 <p className="text-xs text-green-400/70">
-                  Les achats d'équipement de moins de 500€ HT sont déductibles immédiatement.
+                  Vous déclarez vos frais au réel (case 5HH). Pas d'abattement forfaitaire de 34% en BNC.
                 </p>
               </div>
             </div>
 
             <div className="flex items-start p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
               <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center mr-3 mt-0.5">
-                <span className="text-white text-xs font-bold">🏠</span>
+                <span className="text-white text-xs font-bold">📋</span>
               </div>
               <div>
-                <h4 className="text-sm font-medium text-purple-300 mb-1">Bureau à domicile</h4>
+                <h4 className="text-sm font-medium text-purple-300 mb-1">Justificatifs</h4>
                 <p className="text-xs text-purple-400/70">
-                  Déduction possible d'une partie des frais de logement si vous avez un espace dédié.
+                  Conservez tous vos justificatifs (factures, tickets) pendant 6 ans minimum.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start p-3 bg-orange-500/10 rounded-lg border border-orange-500/20">
+              <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center mr-3 mt-0.5">
+                <span className="text-white text-xs font-bold">⚠️</span>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium text-orange-300 mb-1">TVA et charges sociales</h4>
+                <p className="text-xs text-orange-400/70">
+                  Les montants déclarés sont HT. TVA et cotisations sociales sont traitées séparément.
                 </p>
               </div>
             </div>
