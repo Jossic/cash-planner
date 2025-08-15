@@ -3,12 +3,12 @@ use std::str::FromStr;
 use chrono::{NaiveDate, NaiveDateTime};
 use domain::{
     ConfigRepo, DomainError, DomainResult, Expense, ExpenseRepo, Invoice, InvoiceRepo, 
-    MonthId, MonthRepo, MonthStatus, Provision, ProvisionKind, ProvisionRepo, Settings,
+    MonthId, MonthRepo, MonthStatus, Provision, ProvisionType, ProvisionStatus, ProvisionRepo, Settings,
     // New domain imports
     WorkingDay, WorkingDayRepo, WorkingDaysStats, TaxSchedule, TaxScheduleRepo, TaxType, TaxScheduleStatus,
     Simulation, SimulationRepo, SimulationParameters, SimulationScenario,
-    MonthlyKPI, KPIRepo, Operation, OperationRepo, OperationSens,
-    Declaration, DeclarationRepo, TypeDeclaration, StatutDeclaration
+    MonthlyKPI, KPIRepo, Operation, OperationRepo, OperationType,
+    Declaration, DeclarationRepo, DeclarationType, DeclarationStatus
 };
 use sqlx::{sqlite::{SqliteConnectOptions}, Pool, Row, Sqlite};
 
@@ -180,27 +180,62 @@ impl ExpenseRepo for SqliteExpenseRepo {
 #[async_trait::async_trait]
 impl ProvisionRepo for SqliteProvisionRepo {
     async fn upsert_provision(&self, p: Provision) -> DomainResult<()> {
-        sqlx::query(r#"INSERT INTO provisions (id, kind, label, due_date, amount_cents, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, label=excluded.label, due_date=excluded.due_date, amount_cents=excluded.amount_cents, created_at=excluded.created_at"#)
+        let provision_type_str = match p.provision_type {
+            ProvisionType::Vat => "vat",
+            ProvisionType::Urssaf => "urssaf",
+        };
+        let status_str = match p.status {
+            ProvisionStatus::Pending => "pending",
+            ProvisionStatus::Paid => "paid",
+            ProvisionStatus::Overdue => "overdue",
+        };
+        sqlx::query(r#"INSERT INTO provisions (id, period_year, period_month, type, amount_cents, due_date, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(type, period_year, period_month) DO UPDATE SET id=excluded.id, amount_cents=excluded.amount_cents, due_date=excluded.due_date, status=excluded.status, updated_at=excluded.updated_at"#)
             .bind(p.id.to_string())
-            .bind(match p.kind { ProvisionKind::Vat=>"Vat", ProvisionKind::Urssaf=>"Urssaf", ProvisionKind::Other=>"Other" })
-            .bind(p.label)
-            .bind(p.due_date.format("%Y-%m-%d").to_string())
+            .bind(p.period_year)
+            .bind(p.period_month as i64)
+            .bind(provision_type_str)
             .bind(p.amount_cents)
+            .bind(p.due_date.format("%Y-%m-%d").to_string())
+            .bind(status_str)
             .bind(p.created_at.format("%Y-%m-%d %H:%M:%S").to_string())
+            .bind(p.updated_at.format("%Y-%m-%d %H:%M:%S").to_string())
             .execute(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
         Ok(())
     }
 
-    async fn list_provisions(&self, _month: Option<MonthId>) -> DomainResult<Vec<Provision>> {
-        let rows = sqlx::query(r#"SELECT id, kind, label, due_date, amount_cents, created_at FROM provisions"#)
-            .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
-        Ok(rows.into_iter().map(|r| Provision{
-            id: r.get::<String,_>("id").parse().unwrap(),
-            kind: match r.get::<String,_>("kind").as_str() { "Vat"=>ProvisionKind::Vat, "Urssaf"=>ProvisionKind::Urssaf, _=>ProvisionKind::Other },
-            label: r.get("label"),
-            due_date: NaiveDate::parse_from_str(&r.get::<String,_>("due_date"), "%Y-%m-%d").unwrap(),
-            amount_cents: r.get("amount_cents"),
-            created_at: NaiveDateTime::parse_from_str(&r.get::<String,_>("created_at"), "%Y-%m-%d %H:%M:%S").unwrap(),
+    async fn list_provisions(&self, month: Option<MonthId>) -> DomainResult<Vec<Provision>> {
+        let rows = if let Some(m) = month {
+            sqlx::query(r#"SELECT id, period_year, period_month, type, amount_cents, due_date, status, created_at, updated_at FROM provisions WHERE period_year = ? AND period_month = ?"#)
+                .bind(m.year)
+                .bind(m.month as i64)
+                .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
+        } else {
+            sqlx::query(r#"SELECT id, period_year, period_month, type, amount_cents, due_date, status, created_at, updated_at FROM provisions"#)
+                .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
+        };
+        Ok(rows.into_iter().map(|r| {
+            let provision_type = match r.get::<String,_>("type").as_str() {
+                "vat" => ProvisionType::Vat,
+                "urssaf" => ProvisionType::Urssaf,
+                _ => ProvisionType::Vat,
+            };
+            let status = match r.get::<String,_>("status").as_str() {
+                "pending" => ProvisionStatus::Pending,
+                "paid" => ProvisionStatus::Paid,
+                "overdue" => ProvisionStatus::Overdue,
+                _ => ProvisionStatus::Pending,
+            };
+            Provision{
+                id: r.get::<String,_>("id").parse().unwrap(),
+                period_year: r.get("period_year"),
+                period_month: r.get::<i64,_>("period_month") as u32,
+                provision_type,
+                amount_cents: r.get("amount_cents"),
+                due_date: NaiveDate::parse_from_str(&r.get::<String,_>("due_date"), "%Y-%m-%d").unwrap(),
+                status,
+                created_at: NaiveDateTime::parse_from_str(&r.get::<String,_>("created_at"), "%Y-%m-%d %H:%M:%S").unwrap(),
+                updated_at: NaiveDateTime::parse_from_str(&r.get::<String,_>("updated_at"), "%Y-%m-%d %H:%M:%S").unwrap(),
+            }
         }).collect())
     }
 }
@@ -910,36 +945,34 @@ impl KPIRepo for SqliteKPIRepo {
 }
 
 // Helper functions for Operation serialization/deserialization
-fn operation_sens_to_string(sens: &OperationSens) -> &'static str {
-    match sens {
-        OperationSens::Achat => "achat",
-        OperationSens::Vente => "vente",
+fn operation_type_to_string(operation_type: &OperationType) -> &'static str {
+    match operation_type {
+        OperationType::Purchase => "purchase",
+        OperationType::Sale => "sale",
     }
 }
 
-fn string_to_operation_sens(s: &str) -> OperationSens {
+fn string_to_operation_type(s: &str) -> OperationType {
     match s {
-        "achat" => OperationSens::Achat,
-        "vente" => OperationSens::Vente,
-        _ => OperationSens::Vente, // default fallback
+        "purchase" => OperationType::Purchase,
+        "sale" => OperationType::Sale,
+        _ => OperationType::Sale, // default fallback
     }
 }
 
 fn row_to_operation(row: &sqlx::sqlite::SqliteRow) -> Operation {
     Operation {
         id: row.get::<String,_>("id").parse().unwrap(),
-        date_facture: NaiveDate::parse_from_str(&row.get::<String,_>("date_facture"), "%Y-%m-%d").unwrap(),
-        date_encaissement: row.get::<Option<String>,_>("date_encaissement")
+        invoice_date: NaiveDate::parse_from_str(&row.get::<String,_>("invoice_date"), "%Y-%m-%d").unwrap(),
+        payment_date: row.get::<Option<String>,_>("payment_date")
             .map(|s: String| NaiveDate::parse_from_str(&s, "%Y-%m-%d").unwrap()),
-        date_paiement: row.get::<Option<String>,_>("date_paiement")
-            .map(|s: String| NaiveDate::parse_from_str(&s, "%Y-%m-%d").unwrap()),
-        sens: string_to_operation_sens(&row.get::<String,_>("sens")),
-        montant_ht_cents: row.get("montant_ht_cents"),
-        montant_tva_cents: row.get("montant_tva_cents"),
-        montant_ttc_cents: row.get("montant_ttc_cents"),
-        tva_sur_encaissements: row.get::<i64,_>("tva_sur_encaissements") != 0,
-        libelle: row.get("libelle"),
-        justificatif_url: row.get("justificatif_url"),
+        operation_type: string_to_operation_type(&row.get::<String,_>("type")),
+        amount_ht_cents: row.get("amount_ht_cents"),
+        vat_amount_cents: row.get("vat_amount_cents"),
+        amount_ttc_cents: row.get("amount_ttc_cents"),
+        vat_on_payments: row.get::<i64,_>("vat_on_payments") != 0,
+        label: row.get("label"),
+        receipt_url: row.get("receipt_url"),
         created_at: NaiveDateTime::parse_from_str(&row.get::<String,_>("created_at"), "%Y-%m-%d %H:%M:%S").unwrap(),
         updated_at: NaiveDateTime::parse_from_str(&row.get::<String,_>("updated_at"), "%Y-%m-%d %H:%M:%S").unwrap(),
     }
@@ -948,27 +981,25 @@ fn row_to_operation(row: &sqlx::sqlite::SqliteRow) -> Operation {
 #[async_trait::async_trait]
 impl OperationRepo for SqliteOperationRepo {
     async fn create_operation(&self, operation: Operation) -> DomainResult<()> {
-        let date_encaissement = operation.date_encaissement.map(|d| d.format("%Y-%m-%d").to_string());
-        let date_paiement = operation.date_paiement.map(|d| d.format("%Y-%m-%d").to_string());
+        let payment_date = operation.payment_date.map(|d| d.format("%Y-%m-%d").to_string());
 
         sqlx::query(r#"
             INSERT INTO operations (
-                id, date_facture, date_encaissement, date_paiement, sens,
-                montant_ht_cents, montant_tva_cents, montant_ttc_cents,
-                tva_sur_encaissements, libelle, justificatif_url, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, invoice_date, payment_date, type,
+                amount_ht_cents, vat_amount_cents, amount_ttc_cents,
+                vat_on_payments, label, receipt_url, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#)
             .bind(operation.id.to_string())
-            .bind(operation.date_facture.format("%Y-%m-%d").to_string())
-            .bind(date_encaissement)
-            .bind(date_paiement)
-            .bind(operation_sens_to_string(&operation.sens))
-            .bind(operation.montant_ht_cents)
-            .bind(operation.montant_tva_cents)
-            .bind(operation.montant_ttc_cents)
-            .bind(if operation.tva_sur_encaissements { 1 } else { 0 })
-            .bind(operation.libelle)
-            .bind(operation.justificatif_url)
+            .bind(operation.invoice_date.format("%Y-%m-%d").to_string())
+            .bind(payment_date)
+            .bind(operation_type_to_string(&operation.operation_type))
+            .bind(operation.amount_ht_cents)
+            .bind(operation.vat_amount_cents)
+            .bind(operation.amount_ttc_cents)
+            .bind(if operation.vat_on_payments { 1 } else { 0 })
+            .bind(operation.label)
+            .bind(operation.receipt_url)
             .bind(operation.created_at.format("%Y-%m-%d %H:%M:%S").to_string())
             .bind(operation.updated_at.format("%Y-%m-%d %H:%M:%S").to_string())
             .execute(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
@@ -977,9 +1008,9 @@ impl OperationRepo for SqliteOperationRepo {
 
     async fn get_operation(&self, id: uuid::Uuid) -> DomainResult<Operation> {
         let row = sqlx::query(r#"
-            SELECT id, date_facture, date_encaissement, date_paiement, sens,
-                   montant_ht_cents, montant_tva_cents, montant_ttc_cents,
-                   tva_sur_encaissements, libelle, justificatif_url, created_at, updated_at
+            SELECT id, invoice_date, payment_date, type,
+                   amount_ht_cents, vat_amount_cents, amount_ttc_cents,
+                   vat_on_payments, label, receipt_url, created_at, updated_at
             FROM operations WHERE id = ?
         "#)
             .bind(id.to_string())
@@ -991,26 +1022,24 @@ impl OperationRepo for SqliteOperationRepo {
     }
 
     async fn update_operation(&self, operation: Operation) -> DomainResult<()> {
-        let date_encaissement = operation.date_encaissement.map(|d| d.format("%Y-%m-%d").to_string());
-        let date_paiement = operation.date_paiement.map(|d| d.format("%Y-%m-%d").to_string());
+        let payment_date = operation.payment_date.map(|d| d.format("%Y-%m-%d").to_string());
 
         sqlx::query(r#"
             UPDATE operations SET 
-                date_facture = ?, date_encaissement = ?, date_paiement = ?, sens = ?,
-                montant_ht_cents = ?, montant_tva_cents = ?, montant_ttc_cents = ?,
-                tva_sur_encaissements = ?, libelle = ?, justificatif_url = ?, updated_at = ?
+                invoice_date = ?, payment_date = ?, type = ?,
+                amount_ht_cents = ?, vat_amount_cents = ?, amount_ttc_cents = ?,
+                vat_on_payments = ?, label = ?, receipt_url = ?, updated_at = ?
             WHERE id = ?
         "#)
-            .bind(operation.date_facture.format("%Y-%m-%d").to_string())
-            .bind(date_encaissement)
-            .bind(date_paiement)
-            .bind(operation_sens_to_string(&operation.sens))
-            .bind(operation.montant_ht_cents)
-            .bind(operation.montant_tva_cents)
-            .bind(operation.montant_ttc_cents)
-            .bind(if operation.tva_sur_encaissements { 1 } else { 0 })
-            .bind(operation.libelle)
-            .bind(operation.justificatif_url)
+            .bind(operation.invoice_date.format("%Y-%m-%d").to_string())
+            .bind(payment_date)
+            .bind(operation_type_to_string(&operation.operation_type))
+            .bind(operation.amount_ht_cents)
+            .bind(operation.vat_amount_cents)
+            .bind(operation.amount_ttc_cents)
+            .bind(if operation.vat_on_payments { 1 } else { 0 })
+            .bind(operation.label)
+            .bind(operation.receipt_url)
             .bind(operation.updated_at.format("%Y-%m-%d %H:%M:%S").to_string())
             .bind(operation.id.to_string())
             .execute(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
@@ -1028,22 +1057,22 @@ impl OperationRepo for SqliteOperationRepo {
         let rows = if let Some(m) = month {
             let ym = format!("{:04}-{:02}", m.year, m.month);
             sqlx::query(r#"
-                SELECT id, date_facture, date_encaissement, date_paiement, sens,
-                       montant_ht_cents, montant_tva_cents, montant_ttc_cents,
-                       tva_sur_encaissements, libelle, justificatif_url, created_at, updated_at
+                SELECT id, invoice_date, payment_date, type,
+                       amount_ht_cents, vat_amount_cents, amount_ttc_cents,
+                       vat_on_payments, label, receipt_url, created_at, updated_at
                 FROM operations 
-                WHERE substr(date_facture, 1, 7) = ? 
-                ORDER BY date_facture DESC
+                WHERE substr(invoice_date, 1, 7) = ? 
+                ORDER BY invoice_date DESC
             "#)
                 .bind(ym)
                 .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
         } else {
             sqlx::query(r#"
-                SELECT id, date_facture, date_encaissement, date_paiement, sens,
-                       montant_ht_cents, montant_tva_cents, montant_ttc_cents,
-                       tva_sur_encaissements, libelle, justificatif_url, created_at, updated_at
+                SELECT id, invoice_date, payment_date, type,
+                       amount_ht_cents, vat_amount_cents, amount_ttc_cents,
+                       vat_on_payments, label, receipt_url, created_at, updated_at
                 FROM operations 
-                ORDER BY date_facture DESC
+                ORDER BY invoice_date DESC
             "#)
                 .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
         };
@@ -1051,45 +1080,45 @@ impl OperationRepo for SqliteOperationRepo {
         Ok(rows.into_iter().map(|r| row_to_operation(&r)).collect())
     }
 
-    async fn list_operations_by_sens(&self, sens: OperationSens, month: Option<MonthId>) -> DomainResult<Vec<Operation>> {
+    async fn list_operations_by_type(&self, operation_type: OperationType, month: Option<MonthId>) -> DomainResult<Vec<Operation>> {
         let rows = if let Some(m) = month {
             let ym = format!("{:04}-{:02}", m.year, m.month);
             sqlx::query(r#"
-                SELECT id, date_facture, date_encaissement, date_paiement, sens,
-                       montant_ht_cents, montant_tva_cents, montant_ttc_cents,
-                       tva_sur_encaissements, libelle, justificatif_url, created_at, updated_at
+                SELECT id, invoice_date, payment_date, type,
+                       amount_ht_cents, vat_amount_cents, amount_ttc_cents,
+                       vat_on_payments, label, receipt_url, created_at, updated_at
                 FROM operations 
-                WHERE sens = ? AND substr(date_facture, 1, 7) = ?
-                ORDER BY date_facture DESC
+                WHERE type = ? AND substr(invoice_date, 1, 7) = ?
+                ORDER BY invoice_date DESC
             "#)
-                .bind(operation_sens_to_string(&sens))
+                .bind(operation_type_to_string(&operation_type))
                 .bind(ym)
                 .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
         } else {
             sqlx::query(r#"
-                SELECT id, date_facture, date_encaissement, date_paiement, sens,
-                       montant_ht_cents, montant_tva_cents, montant_ttc_cents,
-                       tva_sur_encaissements, libelle, justificatif_url, created_at, updated_at
+                SELECT id, invoice_date, payment_date, type,
+                       amount_ht_cents, vat_amount_cents, amount_ttc_cents,
+                       vat_on_payments, label, receipt_url, created_at, updated_at
                 FROM operations 
-                WHERE sens = ?
-                ORDER BY date_facture DESC
+                WHERE type = ?
+                ORDER BY invoice_date DESC
             "#)
-                .bind(operation_sens_to_string(&sens))
+                .bind(operation_type_to_string(&operation_type))
                 .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
         };
         
         Ok(rows.into_iter().map(|r| row_to_operation(&r)).collect())
     }
 
-    async fn list_operations_by_encaissement_month(&self, month: MonthId) -> DomainResult<Vec<Operation>> {
+    async fn list_operations_by_payment_month(&self, month: MonthId) -> DomainResult<Vec<Operation>> {
         let ym = format!("{:04}-{:02}", month.year, month.month);
         let rows = sqlx::query(r#"
-            SELECT id, date_facture, date_encaissement, date_paiement, sens,
-                   montant_ht_cents, montant_tva_cents, montant_ttc_cents,
-                   tva_sur_encaissements, libelle, justificatif_url, created_at, updated_at
+            SELECT id, invoice_date, payment_date, type,
+                   amount_ht_cents, vat_amount_cents, amount_ttc_cents,
+                   vat_on_payments, label, receipt_url, created_at, updated_at
             FROM operations 
-            WHERE date_encaissement IS NOT NULL AND substr(date_encaissement, 1, 7) = ?
-            ORDER BY date_encaissement DESC
+            WHERE payment_date IS NOT NULL AND substr(payment_date, 1, 7) = ?
+            ORDER BY payment_date DESC
         "#)
             .bind(ym)
             .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
@@ -1099,49 +1128,49 @@ impl OperationRepo for SqliteOperationRepo {
 }
 
 // Helper functions for Declaration serialization/deserialization
-fn type_declaration_to_string(type_declaration: &TypeDeclaration) -> &'static str {
-    match type_declaration {
-        TypeDeclaration::Tva => "tva",
-        TypeDeclaration::Urssaf => "urssaf",
+fn declaration_type_to_string(declaration_type: &DeclarationType) -> &'static str {
+    match declaration_type {
+        DeclarationType::Vat => "vat",
+        DeclarationType::Urssaf => "urssaf",
     }
 }
 
-fn string_to_type_declaration(s: &str) -> TypeDeclaration {
+fn string_to_declaration_type(s: &str) -> DeclarationType {
     match s {
-        "tva" => TypeDeclaration::Tva,
-        "urssaf" => TypeDeclaration::Urssaf,
-        _ => TypeDeclaration::Tva, // default fallback
+        "vat" => DeclarationType::Vat,
+        "urssaf" => DeclarationType::Urssaf,
+        _ => DeclarationType::Vat, // default fallback
     }
 }
 
-fn statut_declaration_to_string(statut: &StatutDeclaration) -> &'static str {
-    match statut {
-        StatutDeclaration::Pending => "pending",
-        StatutDeclaration::Paid => "paid",
-        StatutDeclaration::Overdue => "overdue",
+fn declaration_status_to_string(status: &DeclarationStatus) -> &'static str {
+    match status {
+        DeclarationStatus::Pending => "pending",
+        DeclarationStatus::Paid => "paid",
+        DeclarationStatus::Overdue => "overdue",
     }
 }
 
-fn string_to_statut_declaration(s: &str) -> StatutDeclaration {
+fn string_to_declaration_status(s: &str) -> DeclarationStatus {
     match s {
-        "pending" => StatutDeclaration::Pending,
-        "paid" => StatutDeclaration::Paid,
-        "overdue" => StatutDeclaration::Overdue,
-        _ => StatutDeclaration::Pending, // default fallback
+        "pending" => DeclarationStatus::Pending,
+        "paid" => DeclarationStatus::Paid,
+        "overdue" => DeclarationStatus::Overdue,
+        _ => DeclarationStatus::Pending, // default fallback
     }
 }
 
 fn row_to_declaration(row: &sqlx::sqlite::SqliteRow) -> Declaration {
     Declaration {
         id: row.get::<String,_>("id").parse().unwrap(),
-        type_declaration: string_to_type_declaration(&row.get::<String,_>("type_declaration")),
-        periode_annee: row.get("periode_annee"),
-        periode_mois: row.get::<i64,_>("periode_mois") as u32,
-        montant_du_cents: row.get("montant_du_cents"),
-        date_echeance: NaiveDate::parse_from_str(&row.get::<String,_>("date_echeance"), "%Y-%m-%d").unwrap(),
-        date_paiement: row.get::<Option<String>,_>("date_paiement")
+        declaration_type: string_to_declaration_type(&row.get::<String,_>("declaration_type")),
+        period_year: row.get("period_year"),
+        period_month: row.get::<i64,_>("period_month") as u32,
+        amount_due_cents: row.get("amount_due_cents"),
+        due_date: NaiveDate::parse_from_str(&row.get::<String,_>("due_date"), "%Y-%m-%d").unwrap(),
+        payment_date: row.get::<Option<String>,_>("payment_date")
             .map(|s: String| NaiveDate::parse_from_str(&s, "%Y-%m-%d").unwrap()),
-        statut: string_to_statut_declaration(&row.get::<String,_>("statut")),
+        status: string_to_declaration_status(&row.get::<String,_>("status")),
         created_at: NaiveDateTime::parse_from_str(&row.get::<String,_>("created_at"), "%Y-%m-%d %H:%M:%S").unwrap(),
         updated_at: NaiveDateTime::parse_from_str(&row.get::<String,_>("updated_at"), "%Y-%m-%d %H:%M:%S").unwrap(),
     }
@@ -1150,22 +1179,22 @@ fn row_to_declaration(row: &sqlx::sqlite::SqliteRow) -> Declaration {
 #[async_trait::async_trait]
 impl DeclarationRepo for SqliteDeclarationRepo {
     async fn create_declaration(&self, declaration: Declaration) -> DomainResult<()> {
-        let date_paiement = declaration.date_paiement.map(|d| d.format("%Y-%m-%d").to_string());
+        let payment_date = declaration.payment_date.map(|d| d.format("%Y-%m-%d").to_string());
 
         sqlx::query(r#"
             INSERT INTO declarations (
-                id, type_declaration, periode_annee, periode_mois, montant_du_cents,
-                date_echeance, date_paiement, statut, created_at, updated_at
+                id, declaration_type, period_year, period_month, amount_due_cents,
+                due_date, payment_date, status, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#)
             .bind(declaration.id.to_string())
-            .bind(type_declaration_to_string(&declaration.type_declaration))
-            .bind(declaration.periode_annee)
-            .bind(declaration.periode_mois as i64)
-            .bind(declaration.montant_du_cents)
-            .bind(declaration.date_echeance.format("%Y-%m-%d").to_string())
-            .bind(date_paiement)
-            .bind(statut_declaration_to_string(&declaration.statut))
+            .bind(declaration_type_to_string(&declaration.declaration_type))
+            .bind(declaration.period_year)
+            .bind(declaration.period_month as i64)
+            .bind(declaration.amount_due_cents)
+            .bind(declaration.due_date.format("%Y-%m-%d").to_string())
+            .bind(payment_date)
+            .bind(declaration_status_to_string(&declaration.status))
             .bind(declaration.created_at.format("%Y-%m-%d %H:%M:%S").to_string())
             .bind(declaration.updated_at.format("%Y-%m-%d %H:%M:%S").to_string())
             .execute(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
@@ -1174,8 +1203,8 @@ impl DeclarationRepo for SqliteDeclarationRepo {
 
     async fn get_declaration(&self, id: uuid::Uuid) -> DomainResult<Declaration> {
         let row = sqlx::query(r#"
-            SELECT id, type_declaration, periode_annee, periode_mois, montant_du_cents,
-                   date_echeance, date_paiement, statut, created_at, updated_at
+            SELECT id, declaration_type, period_year, period_month, amount_due_cents,
+                   due_date, payment_date, status, created_at, updated_at
             FROM declarations WHERE id = ?
         "#)
             .bind(id.to_string())
@@ -1187,21 +1216,21 @@ impl DeclarationRepo for SqliteDeclarationRepo {
     }
 
     async fn update_declaration(&self, declaration: Declaration) -> DomainResult<()> {
-        let date_paiement = declaration.date_paiement.map(|d| d.format("%Y-%m-%d").to_string());
+        let payment_date = declaration.payment_date.map(|d| d.format("%Y-%m-%d").to_string());
 
         sqlx::query(r#"
             UPDATE declarations SET 
-                type_declaration = ?, periode_annee = ?, periode_mois = ?, montant_du_cents = ?,
-                date_echeance = ?, date_paiement = ?, statut = ?, updated_at = ?
+                declaration_type = ?, period_year = ?, period_month = ?, amount_due_cents = ?,
+                due_date = ?, payment_date = ?, status = ?, updated_at = ?
             WHERE id = ?
         "#)
-            .bind(type_declaration_to_string(&declaration.type_declaration))
-            .bind(declaration.periode_annee)
-            .bind(declaration.periode_mois as i64)
-            .bind(declaration.montant_du_cents)
-            .bind(declaration.date_echeance.format("%Y-%m-%d").to_string())
-            .bind(date_paiement)
-            .bind(statut_declaration_to_string(&declaration.statut))
+            .bind(declaration_type_to_string(&declaration.declaration_type))
+            .bind(declaration.period_year)
+            .bind(declaration.period_month as i64)
+            .bind(declaration.amount_due_cents)
+            .bind(declaration.due_date.format("%Y-%m-%d").to_string())
+            .bind(payment_date)
+            .bind(declaration_status_to_string(&declaration.status))
             .bind(declaration.updated_at.format("%Y-%m-%d %H:%M:%S").to_string())
             .bind(declaration.id.to_string())
             .execute(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
@@ -1218,20 +1247,20 @@ impl DeclarationRepo for SqliteDeclarationRepo {
     async fn list_declarations(&self, year: Option<i32>) -> DomainResult<Vec<Declaration>> {
         let rows = if let Some(y) = year {
             sqlx::query(r#"
-                SELECT id, type_declaration, periode_annee, periode_mois, montant_du_cents,
-                       date_echeance, date_paiement, statut, created_at, updated_at
+                SELECT id, declaration_type, period_year, period_month, amount_due_cents,
+                       due_date, payment_date, status, created_at, updated_at
                 FROM declarations 
-                WHERE periode_annee = ? 
-                ORDER BY periode_annee DESC, periode_mois DESC
+                WHERE period_year = ? 
+                ORDER BY period_year DESC, period_month DESC
             "#)
                 .bind(y)
                 .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
         } else {
             sqlx::query(r#"
-                SELECT id, type_declaration, periode_annee, periode_mois, montant_du_cents,
-                       date_echeance, date_paiement, statut, created_at, updated_at
+                SELECT id, declaration_type, period_year, period_month, amount_due_cents,
+                       due_date, payment_date, status, created_at, updated_at
                 FROM declarations 
-                ORDER BY periode_annee DESC, periode_mois DESC
+                ORDER BY period_year DESC, period_month DESC
             "#)
                 .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?
         };
@@ -1239,30 +1268,30 @@ impl DeclarationRepo for SqliteDeclarationRepo {
         Ok(rows.into_iter().map(|r| row_to_declaration(&r)).collect())
     }
 
-    async fn get_declaration_by_period(&self, type_declaration: TypeDeclaration, annee: i32, mois: u32) -> DomainResult<Option<Declaration>> {
+    async fn get_declaration_by_period(&self, declaration_type: DeclarationType, year: i32, month: u32) -> DomainResult<Option<Declaration>> {
         let row = sqlx::query(r#"
-            SELECT id, type_declaration, periode_annee, periode_mois, montant_du_cents,
-                   date_echeance, date_paiement, statut, created_at, updated_at
+            SELECT id, declaration_type, period_year, period_month, amount_due_cents,
+                   due_date, payment_date, status, created_at, updated_at
             FROM declarations 
-            WHERE type_declaration = ? AND periode_annee = ? AND periode_mois = ?
+            WHERE declaration_type = ? AND period_year = ? AND period_month = ?
         "#)
-            .bind(type_declaration_to_string(&type_declaration))
-            .bind(annee)
-            .bind(mois as i64)
+            .bind(declaration_type_to_string(&declaration_type))
+            .bind(year)
+            .bind(month as i64)
             .fetch_optional(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
         
         Ok(row.map(|r| row_to_declaration(&r)))
     }
 
-    async fn list_declarations_by_status(&self, statut: StatutDeclaration) -> DomainResult<Vec<Declaration>> {
+    async fn list_declarations_by_status(&self, status: DeclarationStatus) -> DomainResult<Vec<Declaration>> {
         let rows = sqlx::query(r#"
-            SELECT id, type_declaration, periode_annee, periode_mois, montant_du_cents,
-                   date_echeance, date_paiement, statut, created_at, updated_at
+            SELECT id, declaration_type, period_year, period_month, amount_due_cents,
+                   due_date, payment_date, status, created_at, updated_at
             FROM declarations 
-            WHERE statut = ?
-            ORDER BY date_echeance ASC
+            WHERE status = ?
+            ORDER BY due_date ASC
         "#)
-            .bind(statut_declaration_to_string(&statut))
+            .bind(declaration_status_to_string(&status))
             .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
         
         Ok(rows.into_iter().map(|r| row_to_declaration(&r)).collect())

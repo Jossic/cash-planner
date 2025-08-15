@@ -214,19 +214,19 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
           
           const periodData: DashboardPeriodData = {
             monthId: periodKey,
-            revenue: periodDashboard.encaissements_ht_cents,
-            expenses: periodDashboard.depenses_ttc_cents,
-            vatDue: periodDashboard.tva_due_cents,
+            revenue: periodDashboard.revenue_ht_cents,
+            expenses: periodDashboard.expenses_ttc_cents || 0,
+            vatDue: periodDashboard.vat_due_cents,
             urssafDue: periodDashboard.urssaf_due_cents,
-            available: periodDashboard.disponible_cents,
-            invoicesCount: periodDashboard.ventes_count || 0,
-            expensesCount: periodDashboard.achats_count || 0,
+            available: periodDashboard.available_cents,
+            invoicesCount: periodDashboard.sales_count || 0,
+            expensesCount: periodDashboard.purchases_count || 0,
           };
           
           dashboardPeriods.push(periodData);
-          totalRevenue += periodDashboard.encaissements_ht_cents;
-          totalExpenses += periodDashboard.depenses_ttc_cents;
-          totalVat += periodDashboard.tva_due_cents;
+          totalRevenue += periodDashboard.revenue_ht_cents;
+          totalExpenses += periodDashboard.expenses_ttc_cents || 0;
+          totalVat += periodDashboard.vat_due_cents;
           totalUrssaf += periodDashboard.urssaf_due_cents;
         } catch (error) {
           console.error(`❌ Erreur chargement ${periodKey}:`, error);

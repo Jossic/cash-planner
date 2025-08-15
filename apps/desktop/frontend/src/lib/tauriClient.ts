@@ -95,12 +95,15 @@ export class TauriClient {
   private static transformOperation(rawOp: any): Operation {
     const operation = {
       ...rawOp,
-      // Ajout des propriétés calculées pour compatibilité
-      get date() { return this.date_facture },
-      get encaissement_date() { return this.date_encaissement },
-      get amount_ht_cents() { return this.montant_ht_cents },
-      get amount_ttc_cents() { return this.montant_ttc_cents },
-      get tva_cents() { return this.montant_tva_cents }
+      // Ajout des propriétés calculées pour compatibilité avec l'ancien code
+      get date() { return this.invoice_date },
+      get encaissement_date() { return this.payment_date },
+      get montant_ht_cents() { return this.amount_ht_cents },
+      get montant_ttc_cents() { return this.amount_ttc_cents },
+      get montant_tva_cents() { return this.vat_amount_cents },
+      get sens() { 
+        return this.operation_type === 'sale' ? 'vente' : 'achat'
+      }
     } as Operation
     
     return operation

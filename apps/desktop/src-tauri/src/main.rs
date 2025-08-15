@@ -11,7 +11,7 @@ use domain::{
     WorkingDay, WorkingDaysStats, TaxSchedule, Simulation, SimulationResults, MonthlyKPI,
     DailyRateCalculation, AnnualIncomeProjection, ProvisionOptimization, WorkingPatternAnalysis,
     // Operation model
-    Operation, OperationSens
+    Operation, OperationType
 };
 use infra::{connect_and_migrate, MinioService, MinioConfig, FileInfo, StorageStats};
 use serde::{Deserialize, Serialize};
@@ -227,8 +227,8 @@ fn main() {
             cmd_update_operation,
             cmd_delete_operation,
             cmd_list_operations,
-            cmd_list_operations_by_sens,
-            cmd_list_operations_by_encaissement_month,
+            cmd_list_operations_by_type,
+            cmd_list_operations_by_payment_month,
             // V2 business logic commands
             cmd_get_dashboard_v2,
             cmd_prepare_vat_v2,
@@ -505,18 +505,18 @@ async fn cmd_list_operations(
 }
 
 
-/// List operations by sens (achat/vente) with optional month filter
+/// List operations by type (purchase/sale) with optional month filter
 #[tauri::command]
-async fn cmd_list_operations_by_sens(
+async fn cmd_list_operations_by_type(
     state: State<'_, AppState>, 
-    sens: String,
+    operation_type: String,
     month: Option<i32>,
     m: Option<u8>
 ) -> Result<Vec<Operation>, String> {
-    let operation_sens = match sens.as_str() {
-        "achat" => OperationSens::Achat,
-        "vente" => OperationSens::Vente,
-        _ => return Err("Sens invalide: doit être 'achat' ou 'vente'".into()),
+    let op_type = match operation_type.as_str() {
+        "purchase" => OperationType::Purchase,
+        "sale" => OperationType::Sale,
+        _ => return Err("Operation type invalid: must be 'sale' or 'purchase'".into()),
     };
     
     let month_filter = match (month, m) {
@@ -524,18 +524,18 @@ async fn cmd_list_operations_by_sens(
         _ => None,
     };
     
-    state.0.list_operations_by_sens(operation_sens, month_filter).await.map_err(|e| e.to_string())
+    state.0.list_operations_by_type(op_type, month_filter).await.map_err(|e| e.to_string())
 }
 
-/// List operations by encaissement (payment received) month for VAT calculation
+/// List operations by payment month for VAT calculation
 #[tauri::command]
-async fn cmd_list_operations_by_encaissement_month(
+async fn cmd_list_operations_by_payment_month(
     state: State<'_, AppState>,
     year: i32,
     month: u8
 ) -> Result<Vec<Operation>, String> {
     let month_id = MonthId { year, month: month as u32 };
-    state.0.list_operations_by_encaissement_month(month_id).await.map_err(|e| e.to_string())
+    state.0.list_operations_by_payment_month(month_id).await.map_err(|e| e.to_string())
 }
 
 // ============ V2 Business Logic Commands (Operation-based) ============

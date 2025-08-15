@@ -10,17 +10,17 @@ interface CompactOperationFormProps {
   className?: string
 }
 
-type OperationType = 'vente' | 'achat'
-type VenteType = 'prestation' | 'bien'
+type OperationType = 'sale' | 'purchase'
+type SaleType = 'service' | 'goods'
 
 interface FormData {
-  sens: OperationType
-  venteType: VenteType // Pour les ventes: prestation ou bien
-  date: string
-  dateEncaissement: string // Pour prestations uniquement
-  montantHT: string
-  tvaEuros: string // Pour achats: montant TVA en euros
-  libelle: string
+  operation_type: OperationType
+  saleType: SaleType // Pour les ventes: prestation ou bien
+  invoice_date: string
+  payment_date: string // Pour prestations uniquement
+  amount_ht: string
+  vat_euros: string // Pour achats: montant TVA en euros
+  label: string
   file: File | null
 }
 
@@ -35,13 +35,13 @@ const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   })
 
   const [formData, setFormData] = useState<FormData>({
-    sens: 'vente',
-    venteType: 'prestation',
-    date: new Date().toISOString().split('T')[0],
-    dateEncaissement: new Date().toISOString().split('T')[0],
-    montantHT: '',
-    tvaEuros: '',
-    libelle: '',
+    operation_type: 'sale',
+    saleType: 'service',
+    invoice_date: new Date().toISOString().split('T')[0],
+    payment_date: new Date().toISOString().split('T')[0],
+    amount_ht: '',
+    vat_euros: '',
+    label: '',
     file: null
   })
 

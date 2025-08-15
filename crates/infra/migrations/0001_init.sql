@@ -1,77 +1,95 @@
 -- ============================================================================
--- JLA Cash Planner - Schema définitif unifié
+-- JLA Cash Planner - Initial schema with English field names
 -- ============================================================================
 
--- Table operations - Modèle unifié pour toutes les opérations comptables
-CREATE TABLE operations (
+-- Table operations - Unified model for all accounting operations
+CREATE TABLE IF NOT EXISTS operations (
     id TEXT PRIMARY KEY,
-    date_facture TEXT NOT NULL,           -- Date de facture (pas "date d'opération")
-    date_encaissement TEXT,               -- Si TVA sur encaissements (ventes)
-    date_paiement TEXT,                   -- Pour achats prestations  
-    sens TEXT NOT NULL CHECK (sens IN ('vente', 'achat')),
-    montant_ht_cents INTEGER NOT NULL,
-    montant_tva_cents INTEGER NOT NULL,   -- Valeur TVA directe (pas de taux)
-    montant_ttc_cents INTEGER NOT NULL,   -- = HT + TVA
-    tva_sur_encaissements BOOLEAN NOT NULL DEFAULT true,
-    libelle TEXT,
-    justificatif_url TEXT,                -- URL MinIO
+    invoice_date TEXT NOT NULL,           -- Invoice date
+    payment_date TEXT,                    -- Payment/encaissement date 
+    type TEXT NOT NULL CHECK (type IN ('sale', 'purchase')),
+    amount_ht_cents INTEGER NOT NULL,
+    vat_amount_cents INTEGER NOT NULL,    -- Direct VAT value (not rate)
+    amount_ttc_cents INTEGER NOT NULL,    -- = HT + VAT
+    vat_on_payments BOOLEAN NOT NULL DEFAULT true,
+    label TEXT,
+    receipt_url TEXT,                     -- MinIO URL
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
--- Table declarations - Gestion des déclarations fiscales
-CREATE TABLE declarations (
+-- Table declarations - Tax declarations management
+CREATE TABLE IF NOT EXISTS declarations (
     id TEXT PRIMARY KEY,
-    type_declaration TEXT NOT NULL CHECK (type_declaration IN ('tva', 'urssaf')),
-    periode_annee INTEGER NOT NULL,
-    periode_mois INTEGER NOT NULL CHECK (periode_mois >= 1 AND periode_mois <= 12),
-    montant_du_cents INTEGER NOT NULL,
-    date_echeance TEXT NOT NULL,
-    date_paiement TEXT,
-    statut TEXT NOT NULL DEFAULT 'pending' CHECK (statut IN ('pending', 'paid', 'overdue')),
+    declaration_type TEXT NOT NULL CHECK (declaration_type IN ('vat', 'urssaf')),
+    period_year INTEGER NOT NULL,
+    period_month INTEGER NOT NULL CHECK (period_month >= 1 AND period_month <= 12),
+    amount_due_cents INTEGER NOT NULL,
+    due_date TEXT NOT NULL,
+    payment_date TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'overdue')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
--- Table settings - Configuration de l'application
-CREATE TABLE settings (
+-- Table provisions - Tax provisions management
+CREATE TABLE IF NOT EXISTS provisions (
+    id TEXT PRIMARY KEY,
+    period_year INTEGER NOT NULL,
+    period_month INTEGER NOT NULL CHECK (period_month >= 1 AND period_month <= 12),
+    type TEXT NOT NULL CHECK (type IN ('vat', 'urssaf')),
+    amount_cents INTEGER NOT NULL,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'overdue')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- Table settings - Application configuration
+CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     default_vat_rate_ppm INTEGER NOT NULL DEFAULT 200000,  -- 20% = 200000 ppm  
     urssaf_rate_ppm INTEGER NOT NULL DEFAULT 220000,       -- 22% = 220000 ppm
     vat_declare_day INTEGER NOT NULL DEFAULT 12,
     vat_pay_day INTEGER NOT NULL DEFAULT 20,
     urssaf_pay_day INTEGER NOT NULL DEFAULT 5,
-    buffer_cents INTEGER NOT NULL DEFAULT 300000,          -- 3000€ par défaut
-    forecast_ht_cents INTEGER NOT NULL DEFAULT 500000,     -- 5000€ par défaut
-    forecast_expenses_ttc_cents INTEGER NOT NULL DEFAULT 200000, -- 2000€ par défaut  
-    forecast_expense_vat_rate_ppm INTEGER NOT NULL DEFAULT 200000, -- 20% par défaut
+    buffer_cents INTEGER NOT NULL DEFAULT 300000,          -- €3000 default
+    forecast_ht_cents INTEGER NOT NULL DEFAULT 500000,     -- €5000 default
+    forecast_expenses_ttc_cents INTEGER NOT NULL DEFAULT 200000, -- €2000 default  
+    forecast_expense_vat_rate_ppm INTEGER NOT NULL DEFAULT 200000, -- 20% default
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
--- Index pour optimiser les requêtes fréquentes
-CREATE INDEX idx_operations_date_facture ON operations(date_facture);
-CREATE INDEX idx_operations_date_encaissement ON operations(date_encaissement);
-CREATE INDEX idx_operations_sens ON operations(sens);
-CREATE INDEX idx_operations_sens_date ON operations(sens, date_facture);
+-- Indexes to optimize frequent queries
+CREATE INDEX IF NOT EXISTS idx_operations_invoice_date ON operations(invoice_date);
+CREATE INDEX IF NOT EXISTS idx_operations_payment_date ON operations(payment_date);
+CREATE INDEX IF NOT EXISTS idx_operations_type ON operations(type);
+CREATE INDEX IF NOT EXISTS idx_operations_type_date ON operations(type, invoice_date);
 
--- Index composé pour requêtes TVA (par mois d'encaissement)
-CREATE INDEX idx_operations_tva_encaissements ON operations(
-    tva_sur_encaissements, 
-    date_encaissement, 
-    sens
-) WHERE date_encaissement IS NOT NULL;
+-- Composite index for VAT queries (by payment month)
+CREATE INDEX IF NOT EXISTS idx_operations_vat_payments ON operations(
+    vat_on_payments, 
+    payment_date, 
+    type
+) WHERE payment_date IS NOT NULL;
 
--- Index pour declarations par période
-CREATE INDEX idx_declarations_periode ON declarations(periode_annee, periode_mois);
-CREATE INDEX idx_declarations_type_statut ON declarations(type_declaration, statut);
-CREATE INDEX idx_declarations_echeance ON declarations(date_echeance);
+-- Indexes for declarations by period
+CREATE INDEX IF NOT EXISTS idx_declarations_period ON declarations(period_year, period_month);
+CREATE INDEX IF NOT EXISTS idx_declarations_type_status ON declarations(declaration_type, status);
+CREATE INDEX IF NOT EXISTS idx_declarations_due_date ON declarations(due_date);
 
--- Contraintes d'unicité
-CREATE UNIQUE INDEX uniq_declarations_periode ON declarations(type_declaration, periode_annee, periode_mois);
+-- Indexes for provisions
+CREATE INDEX IF NOT EXISTS idx_provisions_period ON provisions(period_year, period_month);
+CREATE INDEX IF NOT EXISTS idx_provisions_type ON provisions(type);
+CREATE INDEX IF NOT EXISTS idx_provisions_due_date ON provisions(due_date);
 
--- Insertion des paramètres par défaut
-INSERT INTO settings (
+-- Unique constraints
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_declarations_period ON declarations(declaration_type, period_year, period_month);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_provisions_period ON provisions(type, period_year, period_month);
+
+-- Insert default settings
+INSERT OR IGNORE INTO settings (
     id, 
     default_vat_rate_ppm, 
     urssaf_rate_ppm, 
@@ -86,15 +104,15 @@ INSERT INTO settings (
     updated_at
 ) VALUES (
     1, 
-    200000,     -- 20% TVA
+    200000,     -- 20% VAT
     220000,     -- 22% URSSAF
-    12,         -- Déclaration TVA le 12
-    20,         -- Paiement TVA le 20
-    5,          -- Paiement URSSAF le 5
-    300000,     -- Buffer 3000€
-    500000,     -- Forecast HT 5000€
-    200000,     -- Forecast expenses 2000€
-    200000,     -- Forecast expense VAT 20%
+    12,         -- VAT declaration on 12th
+    20,         -- VAT payment on 20th
+    5,          -- URSSAF payment on 5th
+    300000,     -- €3000 buffer
+    500000,     -- €5000 forecast HT
+    200000,     -- €2000 forecast expenses
+    200000,     -- 20% forecast expense VAT
     datetime('now'),
     datetime('now')
 );

@@ -51,11 +51,11 @@ pub struct BankTx {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OperationSens {
-    #[serde(rename = "achat")]
-    Achat,
-    #[serde(rename = "vente")]
-    Vente,
+pub enum OperationType {
+    #[serde(rename = "sale")]
+    Sale,
+    #[serde(rename = "purchase")]
+    Purchase,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,30 +73,29 @@ pub enum OperationStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Operation {
     pub id: Uuid,
-    pub date_facture: NaiveDate,           // Date de facture (pas "date d'opération")
-    pub date_encaissement: Option<NaiveDate>, // Si TVA sur encaissements (ventes)
-    pub date_paiement: Option<NaiveDate>,     // Pour achats prestations
-    pub sens: OperationSens,               // vente ou achat
-    pub montant_ht_cents: i64,             // Montant HT en centimes
-    pub montant_tva_cents: i64,            // Valeur TVA directe (pas de taux)
-    pub montant_ttc_cents: i64,            // = HT + TVA
-    pub tva_sur_encaissements: bool,       // true par défaut
-    pub libelle: Option<String>,           // Description
-    pub justificatif_url: Option<String>,  // URL MinIO
-    pub created_at: NaiveDateTime,         // Date de création
-    pub updated_at: NaiveDateTime,         // Date de modification
+    pub invoice_date: NaiveDate,          // Invoice date (not "operation date")
+    pub payment_date: Option<NaiveDate>,  // Unified payment/encaissement date
+    pub operation_type: OperationType,    // sale or purchase
+    pub amount_ht_cents: i64,             // HT amount in cents
+    pub vat_amount_cents: i64,            // VAT direct value (not rate)
+    pub amount_ttc_cents: i64,            // = HT + VAT
+    pub vat_on_payments: bool,            // true by default
+    pub label: Option<String>,            // Description
+    pub receipt_url: Option<String>,      // MinIO URL
+    pub created_at: NaiveDateTime,        // Creation date
+    pub updated_at: NaiveDateTime,        // Modification date
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TypeDeclaration {
-    #[serde(rename = "tva")]
-    Tva,
+pub enum DeclarationType {
+    #[serde(rename = "vat")]
+    Vat,
     #[serde(rename = "urssaf")]
     Urssaf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum StatutDeclaration {
+pub enum DeclarationStatus {
     #[serde(rename = "pending")]
     Pending,
     #[serde(rename = "paid")]
@@ -108,13 +107,13 @@ pub enum StatutDeclaration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Declaration {
     pub id: Uuid,
-    pub type_declaration: TypeDeclaration,
-    pub periode_annee: i32,
-    pub periode_mois: u32, // 1..=12
-    pub montant_du_cents: i64,
-    pub date_echeance: NaiveDate,
-    pub date_paiement: Option<NaiveDate>,
-    pub statut: StatutDeclaration,
+    pub declaration_type: DeclarationType,
+    pub period_year: i32,
+    pub period_month: u32, // 1..=12
+    pub amount_due_cents: i64,
+    pub due_date: NaiveDate,
+    pub payment_date: Option<NaiveDate>,
+    pub status: DeclarationStatus,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -122,15 +121,33 @@ pub struct Declaration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provision {
     pub id: Uuid,
-    pub kind: ProvisionKind,
-    pub label: String,
-    pub due_date: NaiveDate,
+    pub period_year: i32,
+    pub period_month: u32,
+    pub provision_type: ProvisionType,
     pub amount_cents: i64,
+    pub due_date: NaiveDate,
+    pub status: ProvisionStatus,
     pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ProvisionKind { Vat, Urssaf, Other }
+pub enum ProvisionType {
+    #[serde(rename = "vat")]
+    Vat,
+    #[serde(rename = "urssaf")]
+    Urssaf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ProvisionStatus {
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "paid")]
+    Paid,
+    #[serde(rename = "overdue")]
+    Overdue,
+}
 
 // ============ New Entities for Enhanced Features ============
 
@@ -306,7 +323,7 @@ pub struct ForecastLine {
     pub year: i32,
     pub month: u32,
     pub ht_cents: i64,
-    pub tva_due_cents: i64,
+    pub vat_due_cents: i64,
     pub urssaf_due_cents: i64,
     pub expenses_ttc_cents: i64,
     pub net_cents: i64,
@@ -334,7 +351,7 @@ pub fn forecast_cashflow(start: &MonthId, horizon: u32, settings: &Settings) -> 
         let tva_due = collected_tva - exp_tva_est.max(0);
         let net = (ht + collected_tva) - exp_ttc;
         let after_prov = net - tva_due - urssaf - settings.buffer_cents;
-        lines.push(ForecastLine { year: y, month: m, ht_cents: ht, tva_due_cents: tva_due, urssaf_due_cents: urssaf, expenses_ttc_cents: exp_ttc, net_cents: net, after_provisions_cents: after_prov });
+        lines.push(ForecastLine { year: y, month: m, ht_cents: ht, vat_due_cents: tva_due, urssaf_due_cents: urssaf, expenses_ttc_cents: exp_ttc, net_cents: net, after_provisions_cents: after_prov });
         // increment month
         m += 1;
         if m > 12 { m = 1; y += 1; }
@@ -372,8 +389,8 @@ pub trait OperationRepo: Send + Sync {
     async fn update_operation(&self, operation: Operation) -> DomainResult<()>;
     async fn delete_operation(&self, id: Uuid) -> DomainResult<()>;
     async fn list_operations(&self, month: Option<MonthId>) -> DomainResult<Vec<Operation>>;
-    async fn list_operations_by_sens(&self, sens: OperationSens, month: Option<MonthId>) -> DomainResult<Vec<Operation>>;
-    async fn list_operations_by_encaissement_month(&self, month: MonthId) -> DomainResult<Vec<Operation>>;
+    async fn list_operations_by_type(&self, operation_type: OperationType, month: Option<MonthId>) -> DomainResult<Vec<Operation>>;
+    async fn list_operations_by_payment_month(&self, month: MonthId) -> DomainResult<Vec<Operation>>;
 }
 
 #[async_trait::async_trait]
@@ -383,8 +400,8 @@ pub trait DeclarationRepo: Send + Sync {
     async fn update_declaration(&self, declaration: Declaration) -> DomainResult<()>;
     async fn delete_declaration(&self, id: Uuid) -> DomainResult<()>;
     async fn list_declarations(&self, year: Option<i32>) -> DomainResult<Vec<Declaration>>;
-    async fn get_declaration_by_period(&self, type_declaration: TypeDeclaration, annee: i32, mois: u32) -> DomainResult<Option<Declaration>>;
-    async fn list_declarations_by_status(&self, statut: StatutDeclaration) -> DomainResult<Vec<Declaration>>;
+    async fn get_declaration_by_period(&self, declaration_type: DeclarationType, year: i32, month: u32) -> DomainResult<Option<Declaration>>;
+    async fn list_declarations_by_status(&self, status: DeclarationStatus) -> DomainResult<Vec<Declaration>>;
 }
 
 #[async_trait::async_trait]
@@ -498,10 +515,13 @@ pub fn compute_urssaf_for_month(month: &MonthId, invoices: &[Invoice], rate_ppm:
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardSummary {
     pub month: MonthId,
-    pub encaissements_ht_cents: i64,
-    pub tva_due_cents: i64,
+    pub revenue_ht_cents: i64,
+    pub expenses_ttc_cents: i64,
+    pub vat_due_cents: i64,
     pub urssaf_due_cents: i64,
-    pub disponible_cents: i64,
+    pub available_cents: i64,
+    pub sales_count: i64,
+    pub purchases_count: i64,
 }
 
 pub fn compute_dashboard(
@@ -513,19 +533,40 @@ pub fn compute_dashboard(
 ) -> DashboardSummary {
     let vat = compute_vat_for_month(month, invoices, expenses);
     let urssaf = compute_urssaf_for_month(month, invoices, settings.urssaf_rate_ppm);
-    let encaissements_ht_cents: i64 = invoices
+    let revenue_ht_cents: i64 = invoices
         .iter()
         .filter(|i| i.paid_at.map(|d| d.year() == month.year && d.month() == month.month).unwrap_or(false))
         .map(|i| i.amount_ht)
         .sum();
     let future_provisions: i64 = provisions.iter().map(|p| p.amount_cents).sum();
-    let disponible_cents = encaissements_ht_cents - vat.due_cents - urssaf.due_cents - future_provisions - settings.buffer_cents;
+    let available_cents = revenue_ht_cents - vat.due_cents - urssaf.due_cents - future_provisions - settings.buffer_cents;
+    
+    // Calculate expenses for the month
+    let expenses_ttc_cents: i64 = expenses
+        .iter()
+        .filter(|e| e.paid_at.map(|d| d.year() == month.year && d.month() == month.month).unwrap_or(false))
+        .map(|e| e.amount_ttc)
+        .sum();
+        
+    // Count sales and purchases
+    let sales_count = invoices
+        .iter()
+        .filter(|i| i.service_date.year() == month.year && i.service_date.month() == month.month)
+        .count() as i64;
+    let purchases_count = expenses
+        .iter()
+        .filter(|e| e.booking_date.year() == month.year && e.booking_date.month() == month.month)
+        .count() as i64;
+    
     DashboardSummary {
         month: month.clone(),
-        encaissements_ht_cents,
-        tva_due_cents: vat.due_cents,
+        revenue_ht_cents,
+        expenses_ttc_cents,
+        vat_due_cents: vat.due_cents,
         urssaf_due_cents: urssaf.due_cents,
-        disponible_cents,
+        available_cents,
+        sales_count,
+        purchases_count,
     }
 }
 
@@ -585,22 +626,22 @@ pub fn compute_vat_for_month_v2(month: &MonthId, operations: &[Operation]) -> Va
     let mut deductible_cents = 0i64;
 
     for op in operations {
-        let is_tva_due_this_month = if op.tva_sur_encaissements {
-            // TVA sur encaissements: use date_encaissement if available
-            if let Some(date_encaissement) = op.date_encaissement {
-                date_encaissement.year() == month.year && date_encaissement.month() == month.month
+        let is_tva_due_this_month = if op.vat_on_payments {
+            // TVA sur encaissements: use payment_date if available
+            if let Some(payment_date) = op.payment_date {
+                payment_date.year() == month.year && payment_date.month() == month.month
             } else {
-                false // No encaissement date means no TVA due yet
+                false // No payment date means no TVA due yet
             }
         } else {
-            // TVA sur facturation: use date_facture
-            op.date_facture.year() == month.year && op.date_facture.month() == month.month
+            // TVA sur facturation: use invoice_date
+            op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
         };
 
         if is_tva_due_this_month {
-            match op.sens {
-                OperationSens::Vente => collected_cents += op.montant_tva_cents,
-                OperationSens::Achat => deductible_cents += op.montant_tva_cents,
+            match op.operation_type {
+                OperationType::Sale => collected_cents += op.vat_amount_cents,
+                OperationType::Purchase => deductible_cents += op.vat_amount_cents,
             }
         }
     }
@@ -620,17 +661,17 @@ pub fn compute_urssaf_for_month_v2(month: &MonthId, operations: &[Operation], ra
     let ca_encaisse_cents: i64 = operations
         .iter()
         .filter(|op| {
-            // Only sales (ventes) count for URSSAF
-            matches!(op.sens, OperationSens::Vente) &&
-            // Use date_encaissement if available, otherwise fall back to date_facture
-            if let Some(date_encaissement) = op.date_encaissement {
-                date_encaissement.year() == month.year && date_encaissement.month() == month.month
+            // Only sales count for URSSAF
+            matches!(op.operation_type, OperationType::Sale) &&
+            // Use payment_date if available, otherwise fall back to invoice_date
+            if let Some(payment_date) = op.payment_date {
+                payment_date.year() == month.year && payment_date.month() == month.month
             } else {
-                // For non-TVA-sur-encaissements, use date_facture as proxy for encaissement
-                op.date_facture.year() == month.year && op.date_facture.month() == month.month
+                // For non-TVA-sur-encaissements, use invoice_date as proxy for payment
+                op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
             }
         })
-        .map(|op| op.montant_ht_cents)
+        .map(|op| op.amount_ht_cents)
         .sum();
 
     let due_cents = ((ca_encaisse_cents as i128) * (rate_ppm as i128) / 1_000_000i128) as i64;
@@ -653,29 +694,62 @@ pub fn compute_dashboard_v2(
     let vat = compute_vat_for_month_v2(month, operations);
     let urssaf = compute_urssaf_for_month_v2(month, operations, settings.urssaf_rate_ppm);
     
-    // Encaissements HT = sum of HT amounts from sales in the month
-    let encaissements_ht_cents: i64 = operations
+    // Revenue HT = sum of HT amounts from sales in the month
+    let revenue_ht_cents: i64 = operations
         .iter()
         .filter(|op| {
-            matches!(op.sens, OperationSens::Vente) &&
-            if let Some(date_encaissement) = op.date_encaissement {
-                date_encaissement.year() == month.year && date_encaissement.month() == month.month
+            matches!(op.operation_type, OperationType::Sale) &&
+            if let Some(payment_date) = op.payment_date {
+                payment_date.year() == month.year && payment_date.month() == month.month
             } else {
-                op.date_facture.year() == month.year && op.date_facture.month() == month.month
+                op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
             }
         })
-        .map(|op| op.montant_ht_cents)
+        .map(|op| op.amount_ht_cents)
         .sum();
 
+    // Calculate expenses for the month
+    let expenses_ttc_cents: i64 = operations
+        .iter()
+        .filter(|op| {
+            matches!(op.operation_type, OperationType::Purchase) &&
+            if let Some(payment_date) = op.payment_date {
+                payment_date.year() == month.year && payment_date.month() == month.month
+            } else {
+                op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
+            }
+        })
+        .map(|op| op.amount_ttc_cents)
+        .sum();
+        
+    // Count sales and purchases
+    let sales_count = operations
+        .iter()
+        .filter(|op| {
+            matches!(op.operation_type, OperationType::Sale) &&
+            op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
+        })
+        .count() as i64;
+    let purchases_count = operations
+        .iter()
+        .filter(|op| {
+            matches!(op.operation_type, OperationType::Purchase) &&
+            op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
+        })
+        .count() as i64;
+
     let future_provisions: i64 = provisions.iter().map(|p| p.amount_cents).sum();
-    let disponible_cents = encaissements_ht_cents - vat.due_cents - urssaf.due_cents - future_provisions - settings.buffer_cents;
+    let available_cents = revenue_ht_cents - vat.due_cents - urssaf.due_cents - future_provisions - settings.buffer_cents;
 
     DashboardSummary {
         month: month.clone(),
-        encaissements_ht_cents,
-        tva_due_cents: vat.due_cents,
+        revenue_ht_cents,
+        expenses_ttc_cents,
+        vat_due_cents: vat.due_cents,
         urssaf_due_cents: urssaf.due_cents,
-        disponible_cents,
+        available_cents,
+        sales_count,
+        purchases_count,
     }
 }
 
@@ -688,31 +762,31 @@ pub fn compute_month_recap_v2(month: &MonthId, operations: &[Operation], setting
     let sales_operations: Vec<_> = operations
         .iter()
         .filter(|op| {
-            matches!(op.sens, OperationSens::Vente) &&
-            if let Some(date_encaissement) = op.date_encaissement {
-                date_encaissement.year() == month.year && date_encaissement.month() == month.month
+            matches!(op.operation_type, OperationType::Sale) &&
+            if let Some(payment_date) = op.payment_date {
+                payment_date.year() == month.year && payment_date.month() == month.month
             } else {
-                op.date_facture.year() == month.year && op.date_facture.month() == month.month
+                op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
             }
         })
         .collect();
 
-    let receipts_ht_cents: i64 = sales_operations.iter().map(|op| op.montant_ht_cents).sum();
-    let receipts_tva_cents: i64 = sales_operations.iter().map(|op| op.montant_tva_cents).sum();
+    let receipts_ht_cents: i64 = sales_operations.iter().map(|op| op.amount_ht_cents).sum();
+    let receipts_tva_cents: i64 = sales_operations.iter().map(|op| op.vat_amount_cents).sum();
     let receipts_ttc_cents = receipts_ht_cents + receipts_tva_cents;
 
     // Expenses from purchases
     let expenses_ttc_cents: i64 = operations
         .iter()
         .filter(|op| {
-            matches!(op.sens, OperationSens::Achat) &&
-            if let Some(date_encaissement) = op.date_encaissement {
-                date_encaissement.year() == month.year && date_encaissement.month() == month.month
+            matches!(op.operation_type, OperationType::Purchase) &&
+            if let Some(payment_date) = op.payment_date {
+                payment_date.year() == month.year && payment_date.month() == month.month
             } else {
-                op.date_facture.year() == month.year && op.date_facture.month() == month.month
+                op.invoice_date.year() == month.year && op.invoice_date.month() == month.month
             }
         })
-        .map(|op| op.montant_ttc_cents)
+        .map(|op| op.amount_ttc_cents)
         .sum();
 
     let net_from_month_cents = receipts_ttc_cents - expenses_ttc_cents;

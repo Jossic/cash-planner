@@ -15,16 +15,15 @@ interface CompactOperationFormProps {
 
 interface Operation {
   id: string
-  date_facture: string
-  date_encaissement: string | null
-  date_paiement: string | null
-  sens: 'vente' | 'achat'
-  montant_ht_cents: number
-  montant_tva_cents: number
-  montant_ttc_cents: number
-  tva_sur_encaissements: boolean
-  libelle: string | null
-  justificatif_url: string | null
+  invoice_date: string
+  payment_date: string | null
+  operation_type: 'sale' | 'purchase'
+  amount_ht_cents: number
+  vat_amount_cents: number
+  amount_ttc_cents: number
+  vat_on_payments: boolean
+  label: string | null
+  receipt_url: string | null
   created_at: string
   updated_at: string
 }
@@ -32,14 +31,14 @@ interface Operation {
 export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({ 
   onOperationAdded 
 }) => {
-  const [sens, setSens] = useState<'vente' | 'achat'>('vente')
+  const [operationType, setOperationType] = useState<'sale' | 'purchase'>('sale')
   const [isPrestation, setIsPrestation] = useState(true)
   const [dateFacture, setDateFacture] = useState('')
   const [dateEncaissement, setDateEncaissement] = useState('')
   const [datePaiement, setDatePaiement] = useState('')
   const [montantHt, setMontantHt] = useState('')
   const [montantTva, setMontantTva] = useState('')
-  const [libelle, setLibelle] = useState('')
+  const [label, setLabel] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<{ name: string; url: string } | null>(null)
@@ -56,16 +55,16 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   // Calcul automatique
   const montantHtNum = parseFloat(montantHt) || 0
   const montantTvaNum = parseFloat(montantTva) || 0
-  const montantTtc = sens === 'achat' 
+  const montantTtc = operationType === 'purchase' 
     ? montantHtNum + montantTvaNum
     : montantHtNum * 1.2 // TOUJOURS 20% TVA pour les ventes
 
   // Validation du bouton
-  const isButtonDisabled = isSubmitting || !dateFacture || !montantHt || (sens === 'vente' && isPrestation && !dateEncaissement)
+  const isButtonDisabled = isSubmitting || !dateFacture || !montantHt || (operationType === 'sale' && isPrestation && !dateEncaissement)
   
   // Debug simple pour cas problématiques
   const shouldBeEnabled = dateFacture && montantHt && !isSubmitting && 
-    !(sens === 'vente' && isPrestation && !dateEncaissement)
+    !(operationType === 'sale' && isPrestation && !dateEncaissement)
   
   if (shouldBeEnabled && isButtonDisabled) {
     console.log('🐛 Bouton devrait être activé mais ne l\'est pas:', {
@@ -80,11 +79,11 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
 
   // Auto-calcul TVA pour ventes
   useEffect(() => {
-    if (sens === 'vente' && montantHt) {
+    if (operationType === 'sale' && montantHt) {
       const tvaRate = 0.2 // TOUJOURS 20% pour toutes les ventes (prestations ET biens)
       setMontantTva((montantHtNum * tvaRate).toFixed(2))
     }
-  }, [montantHt, sens, montantHtNum])
+  }, [montantHt, operationType, montantHtNum])
 
 
   // État pour savoir si Tauri est disponible
@@ -295,7 +294,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
     }
     
     // Validation date encaissement pour prestations
-    if (sens === 'vente' && isPrestation && !dateEncaissement) {
+    if (operationType === 'sale' && isPrestation && !dateEncaissement) {
       console.log('❌ Date encaissement manquante pour prestation')
       return
     }
@@ -306,15 +305,14 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       
       // Préparer les données pour la commande Tauri selon CreateOperationDto
       const operationDto = {
-        date_facture: dateFacture,
-        date_encaissement: sens === 'vente' && isPrestation ? dateEncaissement : null,
-        date_paiement: sens === 'achat' ? (datePaiement || dateFacture) : null,
-        sens,
-        montant_ht_cents: Math.round(montantHtNum * 100),
-        montant_tva_cents: Math.round(montantTvaNum * 100),
-        tva_sur_encaissements: sens === 'vente' ? isPrestation : false,
-        libelle: libelle || `${sens === 'vente' ? 'Vente' : 'Achat'} ${dateFacture}`,
-        justificatif_url: uploadedFile?.url || null
+        invoice_date: dateFacture,
+        payment_date: operationType === 'sale' && isPrestation ? dateEncaissement : (operationType === 'purchase' ? (datePaiement || dateFacture) : null),
+        operation_type: operationType,
+        amount_ht: Math.round(montantHtNum * 100),
+        vat_rate: parseFloat(montantTva) / parseFloat(montantHt) * 100,
+        vat_on_payments: operationType === 'sale' ? isPrestation : false,
+        label: label || `${operationType === 'sale' ? 'Vente' : 'Achat'} ${dateFacture}`,
+        receipt_url: uploadedFile?.url || undefined
       }
       
       console.log('📤 Envoi à Tauri:', operationDto)
@@ -329,7 +327,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
         operationId = `web-op-${Date.now()}`
       }
       console.log('✅ Opération créée avec succès:', operationId)
-      setSuccessMessage(`✅ Opération ${sens} créée avec succès !`)
+      setSuccessMessage(`✅ Opération ${operationType === 'sale' ? 'vente' : 'achat'} créée avec succès !`)
       
       setSubmitError(null)
       
@@ -424,16 +422,16 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
               <label className="text-xs font-medium text-slate-400">Type</label>
               <select
                 ref={firstInputRef}
-                value={sens}
-                onChange={(e) => setSens(e.target.value as 'vente' | 'achat')}
+                value={operationType}
+                onChange={(e) => setOperationType(e.target.value as 'sale' | 'purchase')}
                 className="form-input form-select w-28"
               >
-                <option value="vente">🟢 Vente</option>
-                <option value="achat">🔴 Achat</option>
+                <option value="sale">🟢 Vente</option>
+                <option value="purchase">🔴 Achat</option>
               </select>
             </div>
 
-            {sens === 'vente' && (
+            {operationType === 'sale' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-slate-400">Nature</label>
                 <select
@@ -460,7 +458,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
               />
             </div>
 
-            {sens === 'vente' && isPrestation && (
+            {operationType === 'sale' && isPrestation && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-slate-400">
                   Encaissement <span className="text-red-400">*</span>
@@ -475,7 +473,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
               </div>
             )}
 
-            {sens === 'achat' && (
+            {operationType === 'purchase' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-slate-400">Date paiement</label>
                 <input
@@ -512,9 +510,9 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
                 step="0.01"
                 value={montantTva}
                 onChange={(e) => setMontantTva(e.target.value)}
-                className={`form-input font-mono text-sm w-24 ${sens === 'vente' ? 'text-orange-400 bg-slate-800/50' : ''}`}
+                className={`form-input font-mono text-sm w-24 ${operationType === 'sale' ? 'text-orange-400 bg-slate-800/50' : ''}`}
                 placeholder="0.00"
-                readOnly={sens === 'vente'}
+                readOnly={operationType === 'sale'}
               />
             </div>
 
@@ -542,8 +540,8 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
             <div className="flex-1">
               <input
                 type="text"
-                value={libelle}
-                onChange={(e) => setLibelle(e.target.value)}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
                 className="form-input text-sm"
                 placeholder="Description (optionnelle)"
               />

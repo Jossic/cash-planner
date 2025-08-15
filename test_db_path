@@ -1,0 +1,33 @@
+#!/bin/bash
+# Script to test database path and apply test data
+
+DB_PATH="/Users/jossic/Dev/jla-cash-planner/data.sqlite"
+
+echo "Checking for database at: $DB_PATH"
+
+if [ -f "$DB_PATH" ]; then
+    echo "✅ Database exists"
+    echo "Tables in database:"
+    sqlite3 "$DB_PATH" ".tables"
+    
+    echo ""
+    echo "Operations table schema:"
+    sqlite3 "$DB_PATH" ".schema operations"
+    
+    echo ""
+    echo "Current operations count:"
+    sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM operations;" 2>/dev/null || echo "No operations table or no access"
+    
+    echo ""
+    echo "Inserting test data..."
+    sqlite3 "$DB_PATH" < test_db.sql && echo "✅ Test data inserted" || echo "❌ Failed to insert test data"
+    
+    echo ""
+    echo "Operations after test data:"
+    sqlite3 "$DB_PATH" "SELECT invoice_date, payment_date, operation_type, amount_ht_cents/100 as amount_ht_euros, label FROM operations LIMIT 5;" 2>/dev/null || echo "Could not read operations"
+    
+else
+    echo "❌ Database not found at $DB_PATH"
+    echo "Available database files:"
+    find /Users/jossic/Dev/jla-cash-planner -name "*.sqlite" -type f 2>/dev/null
+fi

@@ -91,7 +91,7 @@ interface AppStore {
   deleteOperation: (operationId: string) => Promise<void>
   getOperationsForPeriod: (periodKey: string) => Operation[]
   loadOperationsForPeriod: (periodKey: string) => Promise<Operation[]>
-  getOperationsBySens: (periodKey: string, sens: 'achat' | 'vente') => Operation[]
+  getOperationsBySens: (periodKey: string, operation_type: 'purchase' | 'sale') => Operation[]
   
   // Migration et compatibilité
   migratePeriodData: (periodKey: string) => void  // Migre Invoice/Expense -> Operation
@@ -400,10 +400,14 @@ export const useAppStore = create<AppStore>()(
         }
       },
       
-      getOperationsBySens: (periodKey, sens) => {
+      getOperationsBySens: (periodKey, operation_type) => {
         const state = get()
         const operations = state.operations[periodKey] || []
-        return operations.filter(op => op.sens === sens)
+        // Use compatibility mapping through getter
+        return operations.filter(op => {
+          const mappedType = op.operation_type === 'sale' ? 'sale' : 'purchase'
+          return mappedType === operation_type
+        })
       },
       
       // Migration des données existantes vers le backend
@@ -764,26 +768,26 @@ export const useAppStore = create<AppStore>()(
           // === NOUVEAU MODÈLE OPERATION ===
           
           // Calcul des encaissements (ventes)
-          const ventes = operations.filter(op => op.sens === 'vente')
+          const ventes = operations.filter(op => op.operation_type === 'sale')
           encaissements = ventes.reduce((sum, op) => {
             let included = false
             
-            if (op.tva_sur_encaissements) {
+            if (op.vat_on_payments) {
               // TVA sur encaissements : date d'encaissement
-              included = !!op.date_encaissement && op.date_encaissement.startsWith(periodKey)
+              included = !!op.payment_date && op.payment_date.startsWith(periodKey)
             } else {
               // TVA sur facturation : date de facturation
-              included = op.date_facture.startsWith(periodKey)
+              included = op.invoice_date.startsWith(periodKey)
             }
             
-            return included ? sum + op.montant_ht_cents : sum
+            return included ? sum + op.amount_ht_cents : sum
           }, 0)
           
           // Calcul des dépenses (achats)
-          const achats = operations.filter(op => op.sens === 'achat')
+          const achats = operations.filter(op => op.operation_type === 'purchase')
           depenses = achats
-            .filter(op => op.date_facture.startsWith(periodKey))
-            .reduce((sum, op) => sum + op.montant_ttc_cents, 0)
+            .filter(op => op.invoice_date.startsWith(periodKey))
+            .reduce((sum, op) => sum + op.amount_ttc_cents, 0)
           
           // Calculs TVA et URSSAF avec nouveau modèle
           vatCalc = calculateVatForOperations(periodKey, operations)
@@ -1016,8 +1020,8 @@ export const useOperations = (periodKey: string) => {
   }, [periodKey, loadOperationsForPeriod, isLoading])
   
   const currentOperations = operations[periodKey] || []
-  const ventes = currentOperations.filter(op => op.sens === 'vente')
-  const achats = currentOperations.filter(op => op.sens === 'achat')
+  const ventes = currentOperations.filter(op => op.operation_type === 'sale')
+  const achats = currentOperations.filter(op => op.operation_type === 'purchase')
   
   return {
     operations: currentOperations,
@@ -1037,11 +1041,11 @@ export const useOperations = (periodKey: string) => {
 export const useVentes = (periodKey: string) => {
   const { operations, addOperation, updateOperation, deleteOperation } = useAppStore()
   
-  const ventes = (operations[periodKey] || []).filter(op => op.sens === 'vente')
+  const ventes = (operations[periodKey] || []).filter(op => op.operation_type === 'sale')
   
   return {
     ventes,
-    addVente: (vente: Omit<CreateOperationDto, 'sens'>) => addOperation({ ...vente, sens: 'vente' }),
+    addVente: (vente: Omit<CreateOperationDto, 'operation_type'>) => addOperation({ ...vente, operation_type: 'sale' }),
     updateOperation,
     deleteOperation
   }
@@ -1051,11 +1055,11 @@ export const useVentes = (periodKey: string) => {
 export const useAchats = (periodKey: string) => {
   const { operations, addOperation, updateOperation, deleteOperation } = useAppStore()
   
-  const achats = (operations[periodKey] || []).filter(op => op.sens === 'achat')
+  const achats = (operations[periodKey] || []).filter(op => op.operation_type === 'purchase')
   
   return {
     achats,
-    addAchat: (achat: Omit<CreateOperationDto, 'sens'>) => addOperation({ ...achat, sens: 'achat' }),
+    addAchat: (achat: Omit<CreateOperationDto, 'operation_type'>) => addOperation({ ...achat, operation_type: 'purchase' }),
     updateOperation,
     deleteOperation
   }

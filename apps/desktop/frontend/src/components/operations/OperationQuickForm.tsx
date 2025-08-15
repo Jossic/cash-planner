@@ -15,14 +15,14 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
   const { addOperation } = useOperations(currentPeriod.key)
   
   const [formData, setFormData] = useState<OperationFormData>({
-    libelle: '',
-    sens: 'vente',
-    montant_ht: '',
-    tva_rate: '20', // DÉFAUT 20% (pas 10% comme demandé)
-    tva_sur_encaissements: true, // Défaut TVA sur encaissements
-    date: new Date().toISOString().split('T')[0], // Aujourd'hui par défaut
-    encaissement_date: '',
-    justificatif_file: undefined
+    label: '',
+    operation_type: 'sale',
+    amount_ht: '',
+    vat_rate: '20', // DÉFAUT 20% (pas 10% comme demandé)
+    vat_on_payments: true, // Défaut TVA sur encaissements
+    invoice_date: new Date().toISOString().split('T')[0], // Aujourd'hui par défaut
+    payment_date: '',
+    receipt_file: undefined
   })
   
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -30,7 +30,7 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
   const [isDragOver, setIsDragOver] = useState(false)
   
   // Refs pour navigation clavier
-  const libelleRef = useRef<HTMLInputElement>(null)
+  const labelRef = useRef<HTMLInputElement>(null)
   const montantRef = useRef<HTMLInputElement>(null)
   const tvaRef = useRef<HTMLInputElement>(null)
   const dateRef = useRef<HTMLInputElement>(null)
@@ -38,7 +38,7 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
   
   // Focus sur le premier champ au montage
   useEffect(() => {
-    libelleRef.current?.focus()
+    labelRef.current?.focus()
   }, [])
   
   const handleInputChange = (field: keyof OperationFormData, value: string | boolean | File) => {
@@ -46,8 +46,8 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
     setError(null)
     
     // Logique spécifique selon le type d'opération
-    if (field === 'sens') {
-      const newTvaRate = value === 'vente' ? '20' : '20' // DÉFAUT 20% pour TOUT (ventes et achats)
+    if (field === 'operation_type') {
+      const newTvaRate = value === 'sale' ? '20' : '20' // DÉFAUT 20% pour TOUT (ventes et achats)
       setFormData(prev => ({ ...prev, tva_rate: newTvaRate }))
     }
   }
@@ -72,11 +72,11 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
       return 'Taux TVA requis et doit être >= 0'
     }
     
-    if (!formData.date) {
+    if (!formData.invoice_date) {
       return 'Date requise'
     }
     
-    if (formData.tva_sur_encaissements && formData.sens === 'vente' && !formData.encaissement_date) {
+    if (formData.vat_on_payments && formData.operation_type === 'sale' && !formData.payment_date) {
       return 'Date d\'encaissement requise pour TVA sur encaissements'
     }
     
@@ -96,32 +96,32 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
     try {
       // Conversion des données du formulaire vers DTO
       const operationDto: CreateOperationDto = {
-        libelle: formData.libelle || undefined,
-        sens: formData.sens,
-        montant_ht: Math.round(parseFloat(formData.montant_ht) * 100), // Conversion en centimes
-        tva_rate: parseFloat(formData.tva_rate),
-        tva_sur_encaissements: formData.tva_sur_encaissements,
-        date: formData.date,
-        encaissement_date: formData.encaissement_date || undefined,
-        justificatif_url: undefined // TODO: Gérer l'upload de fichier
+        label: formData.label || undefined,
+        operation_type: formData.operation_type,
+        amount_ht: Math.round(parseFloat(formData.amount_ht) * 100), // Conversion en centimes
+        vat_rate: parseFloat(formData.vat_rate),
+        vat_on_payments: formData.vat_on_payments,
+        invoice_date: formData.invoice_date,
+        payment_date: formData.payment_date || undefined,
+        receipt_url: undefined // TODO: Gérer l'upload de fichier
       }
       
       await addOperation(operationDto)
       
       // Reset du formulaire après succès
       setFormData({
-        libelle: '',
-        sens: formData.sens, // Garde le même type d'opération
-        montant_ht: '',
-        tva_rate: '20', // DÉFAUT 20%
-        tva_sur_encaissements: formData.tva_sur_encaissements, // Garde la même config TVA
-        date: new Date().toISOString().split('T')[0],
-        encaissement_date: '',
-        justificatif_file: undefined
+        label: '',
+        operation_type: formData.operation_type, // Garde le même type d'opération
+        amount_ht: '',
+        vat_rate: '20', // DÉFAUT 20%
+        vat_on_payments: formData.vat_on_payments, // Garde la même config TVA
+        invoice_date: new Date().toISOString().split('T')[0],
+        payment_date: '',
+        receipt_file: undefined
       })
       
       // Focus sur le premier champ pour saisie rapide
-      libelleRef.current?.focus()
+      labelRef.current?.focus()
       
       onOperationAdded?.()
       
@@ -209,23 +209,23 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
             <div className="form-group">
               <label className="form-label form-label-required">Type d'opération</label>
               <select
-                value={formData.sens}
-                onChange={(e) => handleInputChange('sens', e.target.value as 'vente' | 'achat')}
+                value={formData.operation_type}
+                onChange={(e) => handleInputChange('operation_type', e.target.value as 'sale' | 'purchase')}
                 className="form-input form-select"
               >
-                <option value="vente">🔼 Vente (Recette)</option>
-                <option value="achat">🔽 Achat (Dépense)</option>
+                <option value="sale">🔼 Vente (Recette)</option>
+                <option value="purchase">🔽 Achat (Dépense)</option>
               </select>
             </div>
             
             <div className="form-group">
               <label className="form-label">Description</label>
               <input
-                ref={libelleRef}
+                ref={labelRef}
                 type="text"
                 placeholder="Description de l'opération (optionnel)"
-                value={formData.libelle || ''}
-                onChange={(e) => handleInputChange('libelle', e.target.value)}
+                value={formData.label || ''}
+                onChange={(e) => handleInputChange('label', e.target.value)}
                 onKeyDown={(e) => handleKeyDown(e, montantRef)}
                 className="form-input"
               />
@@ -249,8 +249,8 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
                   type="number"
                   step="0.01"
                   placeholder="0.00"
-                  value={formData.montant_ht}
-                  onChange={(e) => handleInputChange('montant_ht', e.target.value)}
+                  value={formData.amount_ht}
+                  onChange={(e) => handleInputChange('amount_ht', e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, tvaRef)}
                   className="form-input text-lg font-mono"
                 />
@@ -265,8 +265,8 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
                     type="number"
                     step="0.1"
                     placeholder="20"
-                    value={formData.tva_rate}
-                    onChange={(e) => handleInputChange('tva_rate', e.target.value)}
+                    value={formData.vat_rate}
+                    onChange={(e) => handleInputChange('vat_rate', e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, dateRef)}
                     className="form-input text-lg font-mono pr-8"
                   />
@@ -296,22 +296,22 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
               <input
                 ref={dateRef}
                 type="date"
-                value={formData.date}
-                onChange={(e) => handleInputChange('date', e.target.value)}
+                value={formData.invoice_date}
+                onChange={(e) => handleInputChange('invoice_date', e.target.value)}
                 onKeyDown={(e) => handleKeyDown(e, encaissementRef)}
                 className="form-input"
               />
             </div>
           
             {/* Date encaissement (si TVA sur encaissements) */}
-            {formData.tva_sur_encaissements && formData.sens === 'vente' && (
+            {formData.vat_on_payments && formData.operation_type === 'sale' && (
               <div className="form-group">
                 <label className="form-label form-label-required">Date encaissement</label>
                 <input
                   ref={encaissementRef}
                   type="date"
-                  value={formData.encaissement_date || ''}
-                  onChange={(e) => handleInputChange('encaissement_date', e.target.value)}
+                  value={formData.payment_date || ''}
+                  onChange={(e) => handleInputChange('payment_date', e.target.value)}
                   className="form-input"
                 />
                 <p className="text-xs text-orange-400 mt-1">TVA due sur encaissement</p>
@@ -324,7 +324,7 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
             className={`relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer group transition-all duration-200 ${
               isDragOver 
                 ? 'border-blue-500 bg-blue-500/10 scale-105' 
-                : formData.justificatif_file
+                : formData.receipt_file
                 ? 'border-green-500 bg-green-500/10'
                 : 'border-slate-600 bg-slate-800/30 hover:border-slate-500 hover:bg-slate-800/50'
             }`}
@@ -403,8 +403,8 @@ export const OperationQuickForm: React.FC<OperationQuickFormProps> = ({ onOperat
               <label className="flex items-center cursor-pointer flex-1">
                 <input
                   type="checkbox"
-                  checked={formData.tva_sur_encaissements}
-                  onChange={(e) => handleInputChange('tva_sur_encaissements', e.target.checked)}
+                  checked={formData.vat_on_payments}
+                  onChange={(e) => handleInputChange('vat_on_payments', e.target.checked)}
                   className="form-checkbox mr-3"
                 />
                 <div>

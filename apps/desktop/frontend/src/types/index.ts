@@ -13,28 +13,28 @@ export interface Period {
 // NOUVEAU MODÈLE UNIFIÉ - OPÉRATION
 // =============================================================================
 
-// Opération - correspond exact au backend Rust
+// Opération - correspond exact au backend Rust avec nouveaux noms anglais
 export interface Operation {
   id: string
-  date_facture: string            // Date de facturation (NaiveDate depuis le backend)
-  date_encaissement?: string      // Date d'encaissement (Option<NaiveDate>)
-  date_paiement?: string          // Date de paiement (pour achats)
-  sens: 'vente' | 'achat'         // Type d'opération (OperationSens)
-  montant_ht_cents: number        // Montant HT en centimes
-  montant_tva_cents: number       // Montant TVA en centimes (valeur directe)
-  montant_ttc_cents: number       // Montant TTC = HT + TVA
-  tva_sur_encaissements: boolean  // true = TVA à l'encaissement
-  libelle?: string                // Description optionnelle
-  justificatif_url?: string       // URL MinIO pour justificatif
+  invoice_date: string            // Date de facturation (NaiveDate depuis le backend)
+  payment_date?: string           // Date de paiement unifiée (Option<NaiveDate>)
+  operation_type: 'sale' | 'purchase'  // Type d'opération (OperationSens)
+  amount_ht_cents: number         // Montant HT en centimes
+  vat_amount_cents: number        // Montant TVA en centimes (valeur directe)
+  amount_ttc_cents: number        // Montant TTC = HT + TVA
+  vat_on_payments: boolean        // true = TVA à l'encaissement
+  label?: string                  // Description optionnelle
+  receipt_url?: string            // URL MinIO pour justificatif
   created_at: string              // Date de création
   updated_at: string              // Date de modification
 
   // Propriétés calculées pour compatibilité avec l'ancien code
-  readonly date: string                    // = date_facture
-  readonly encaissement_date?: string      // = date_encaissement 
-  readonly amount_ht_cents: number         // = montant_ht_cents
-  readonly amount_ttc_cents: number        // = montant_ttc_cents
-  readonly tva_cents: number               // = montant_tva_cents
+  readonly date: string                    // = invoice_date
+  readonly encaissement_date?: string      // = payment_date 
+  readonly montant_ht_cents: number        // = amount_ht_cents
+  readonly montant_ttc_cents: number       // = amount_ttc_cents
+  readonly montant_tva_cents: number       // = vat_amount_cents
+  readonly sens: 'vente' | 'achat'         // = operation_type mapped
 }
 
 // Statuts d'opération simplifiés
@@ -46,26 +46,26 @@ export type OperationStatus =
 
 // Formulaire pour création/modification d'opération (simplifié)
 export interface OperationFormData {
-  libelle?: string               // Description (optionnel)
-  sens: 'achat' | 'vente'       // Type d'opération
-  montant_ht: string            // Montant HT en euros (saisie utilisateur)
-  tva_rate: string              // Taux TVA en % (string pour saisie)
-  tva_sur_encaissements: boolean // TVA sur encaissements ou facturation
-  date: string                   // Date de l'opération
-  encaissement_date?: string     // Si TVA sur encaissements
-  justificatif_file?: File       // Fichier à uploader (optionnel)
+  label?: string                 // Description (optionnel)
+  operation_type: 'purchase' | 'sale'  // Type d'opération
+  amount_ht: string              // Montant HT en euros (saisie utilisateur)
+  vat_rate: string              // Taux TVA en % (string pour saisie)
+  vat_on_payments: boolean      // TVA sur encaissements ou facturation
+  invoice_date: string          // Date de l'opération
+  payment_date?: string         // Si TVA sur encaissements
+  receipt_file?: File           // Fichier à uploader (optionnel)
 }
 
 // DTO pour création d'opération (simplifié)
 export interface CreateOperationDto {
-  libelle?: string
-  sens: 'achat' | 'vente'
-  montant_ht: number            // Montant HT en centimes
-  tva_rate: number              // Taux TVA en %
-  tva_sur_encaissements: boolean
-  date: string                   // Date ISO
-  encaissement_date?: string     // Date ISO (optionnel)
-  justificatif_url?: string      // URL MinIO après upload (optionnel)
+  label?: string
+  operation_type: 'purchase' | 'sale'
+  amount_ht: number             // Montant HT en centimes
+  vat_rate: number              // Taux TVA en %
+  vat_on_payments: boolean
+  invoice_date: string          // Date ISO
+  payment_date?: string         // Date ISO (optionnel)
+  receipt_url?: string          // URL MinIO après upload (optionnel)
 }
 
 // =============================================================================
@@ -136,13 +136,13 @@ export interface VatCalculation {
 export interface VatOperationBreakdown {
   operation_id: string
   label: string
-  sens: 'achat' | 'vente'
+  operation_type: 'purchase' | 'sale'
   client_supplier?: string
   amount_ht_cents: number
-  tva_rate: number
-  tva_cents: number
-  tva_sur_encaissements: boolean
-  reference_date: string             // date ou encaissement_date selon le cas
+  vat_rate: number
+  vat_amount_cents: number
+  vat_on_payments: boolean
+  reference_date: string             // invoice_date ou payment_date selon le cas
   included_in_period: boolean        // Incluse dans le calcul de la période
   reason?: string                    // Explication si exclue
 }
@@ -184,15 +184,15 @@ export interface UrssafCalculation {
 // Dashboard avec modèle Operation
 export interface DashboardData {
   period: string
-  encaissements_ht_cents: number   // Ventes encaissées HT
-  depenses_ttc_cents: number       // Achats TTC
-  tva_due_cents: number           // TVA à payer
-  urssaf_due_cents: number        // URSSAF à payer
-  disponible_cents: number        // Disponible après taxes et buffer
-  operations_count: number        // Nombre total d'opérations
-  ventes_count: number           // Nombre de ventes
-  achats_count: number           // Nombre d'achats
-  next_deadlines: TaxDeadline[]  // Échéances à venir
+  revenue_ht_cents: number         // Revenue collected HT
+  expenses_ttc_cents: number       // Expenses TTC
+  vat_due_cents: number           // VAT to pay
+  urssaf_due_cents: number        // URSSAF to pay
+  available_cents: number         // Available after taxes and buffer
+  operations_count: number        // Total number of operations
+  sales_count: number             // Number of sales
+  purchases_count: number         // Number of purchases
+  next_deadlines: TaxDeadline[]   // Upcoming deadlines
 }
 
 export interface TaxDeadline {

@@ -18,12 +18,12 @@ export const DeclarationModal: React.FC<DeclarationModalProps> = ({ isOpen, onCl
   }
 
   const calculerTotaux = () => {
-    const ventes = operations.filter(op => op.sens === 'vente')
-    const achats = operations.filter(op => op.sens === 'achat')
+    const ventes = operations.filter(op => op.operation_type === 'sale')
+    const achats = operations.filter(op => op.operation_type === 'purchase')
     
     const totalVentesHT = ventes.reduce((sum, v) => sum + v.amount_ht_cents, 0) / 100
     const totalAchatsHT = achats.reduce((sum, a) => sum + a.amount_ht_cents, 0) / 100
-    const tvaDue = ventes.reduce((sum, v) => sum + v.tva_cents, 0) / 100 - achats.reduce((sum, a) => sum + a.tva_cents, 0) / 100
+    const tvaDue = ventes.reduce((sum, v) => sum + v.vat_amount_cents, 0) / 100 - achats.reduce((sum, a) => sum + a.vat_amount_cents, 0) / 100
     const urssafDue = totalVentesHT * 0.22
 
     return { totalVentesHT, totalAchatsHT, tvaDue, urssafDue }
@@ -71,17 +71,17 @@ export const DeclarationModal: React.FC<DeclarationModalProps> = ({ isOpen, onCl
                   <div key={operation.id} className="flex items-center justify-between text-xs bg-white dark:bg-gray-800 rounded p-2">
                     <div className="flex items-center gap-3">
                       <span className={`px-2 py-1 rounded text-white ${
-                        operation.sens === 'vente' ? 'bg-green-500' : 'bg-blue-500'
+                        operation.operation_type === 'sale' ? 'bg-green-500' : 'bg-blue-500'
                       }`}>
-                        {operation.sens === 'vente' ? 'Vente' : 'Achat'}
+                        {operation.operation_type === 'sale' ? 'Vente' : 'Achat'}
                       </span>
-                      <span>{operation.date}</span>
+                      <span>{operation.invoice_date}</span>
                       <span className="font-medium">{(operation.amount_ht_cents / 100).toFixed(2)}€ HT</span>
-                      {operation.libelle && <span className="text-gray-600 dark:text-gray-400">{operation.libelle}</span>}
+                      {operation.label && <span className="text-gray-600 dark:text-gray-400">{operation.label}</span>}
                     </div>
                     <div className="flex items-center gap-2 text-gray-500">
-                      {operation.justificatif_url && <span>📎</span>}
-                      {operation.tva_sur_encaissements && <span title="TVA sur encaissement">⏰</span>}
+                      {operation.receipt_url && <span>📎</span>}
+                      {operation.vat_on_payments && <span title="TVA sur encaissement">⏰</span>}
                     </div>
                   </div>
                 ))}

@@ -128,8 +128,8 @@ impl AppService {
 
     pub async fn update_operation(&self, mut operation: Operation) -> DomainResult<()> {
         // Auto-calculate TTC from HT + TVA
-        if operation.montant_ttc_cents == 0 {
-            operation.montant_ttc_cents = operation.montant_ht_cents + operation.montant_tva_cents;
+        if operation.amount_ttc_cents == 0 {
+            operation.amount_ttc_cents = operation.amount_ht_cents + operation.vat_amount_cents;
         }
         
         // Set updated_at
@@ -147,12 +147,12 @@ impl AppService {
     }
 
 
-    pub async fn list_operations_by_sens(&self, sens: OperationSens, month: Option<MonthId>) -> DomainResult<Vec<Operation>> {
-        self.deps.operations.list_operations_by_sens(sens, month).await
+    pub async fn list_operations_by_type(&self, operation_type: OperationType, month: Option<MonthId>) -> DomainResult<Vec<Operation>> {
+        self.deps.operations.list_operations_by_type(operation_type, month).await
     }
 
-    pub async fn list_operations_by_encaissement_month(&self, month: MonthId) -> DomainResult<Vec<Operation>> {
-        self.deps.operations.list_operations_by_encaissement_month(month).await
+    pub async fn list_operations_by_payment_month(&self, month: MonthId) -> DomainResult<Vec<Operation>> {
+        self.deps.operations.list_operations_by_payment_month(month).await
     }
 
     // ============ Operation-based Business Logic ============
@@ -662,66 +662,57 @@ impl CreateSimulationDto {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateOperationDto {
-    pub date_facture: String,              // "YYYY-MM-DD" Date de facture
-    pub date_encaissement: Option<String>, // "YYYY-MM-DD" Si TVA sur encaissements
-    pub date_paiement: Option<String>,     // "YYYY-MM-DD" Pour achats prestations
-    pub sens: String,                      // "achat" or "vente"
-    pub montant_ht_cents: i64,             // Montant HT en centimes
-    pub montant_tva_cents: Option<i64>,    // Montant TVA directe (calculé si non fourni)
-    pub tva_sur_encaissements: bool,       // true par défaut
-    pub libelle: Option<String>,           // Description
-    pub justificatif_url: Option<String>,  // URL du justificatif MinIO
+    pub invoice_date: String,               // "YYYY-MM-DD" Invoice date
+    pub payment_date: Option<String>,       // "YYYY-MM-DD" Unified payment/encaissement date
+    pub operation_type: String,             // "sale" or "purchase"
+    pub amount_ht_cents: i64,               // HT amount in cents
+    pub vat_amount_cents: Option<i64>,      // VAT amount direct (calculated if not provided)
+    pub vat_on_payments: bool,              // true by default
+    pub label: Option<String>,              // Description
+    pub receipt_url: Option<String>,        // MinIO receipt URL
 }
 
 impl CreateOperationDto {
-    pub fn into_entity(self, default_tva_rate_ppm: i32) -> Result<Operation, String> {
-        let date_facture = chrono::NaiveDate::parse_from_str(&self.date_facture, "%Y-%m-%d")
-            .map_err(|e| format!("Date de facture invalide: {}", e))?;
+    pub fn into_entity(self, default_vat_rate_ppm: i32) -> Result<Operation, String> {
+        let invoice_date = chrono::NaiveDate::parse_from_str(&self.invoice_date, "%Y-%m-%d")
+            .map_err(|e| format!("Invoice date invalid: {}", e))?;
         
-        let sens = match self.sens.as_str() {
-            "achat" => OperationSens::Achat,
-            "vente" => OperationSens::Vente,
-            _ => return Err("Sens invalide: doit être 'achat' ou 'vente'".into()),
+        let operation_type = match self.operation_type.as_str() {
+            "purchase" => OperationType::Purchase,
+            "sale" => OperationType::Sale,
+            _ => return Err("Operation type invalid: must be 'sale' or 'purchase'".into()),
         };
 
-        let date_encaissement = if let Some(date_str) = self.date_encaissement {
+        let payment_date = if let Some(date_str) = self.payment_date {
             Some(chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
-                .map_err(|e| format!("Date d'encaissement invalide: {}", e))?)
+                .map_err(|e| format!("Payment date invalid: {}", e))?)
         } else {
             None
         };
 
-        let date_paiement = if let Some(date_str) = self.date_paiement {
-            Some(chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
-                .map_err(|e| format!("Date de paiement invalide: {}", e))?)
+        // Automatic VAT calculation if not provided
+        let vat_amount_cents = if let Some(vat) = self.vat_amount_cents {
+            vat
         } else {
-            None
+            // Use default rate
+            ((self.amount_ht_cents as i128) * (default_vat_rate_ppm as i128) / 1_000_000i128) as i64
         };
 
-        // Calcul automatique de la TVA si non fournie
-        let montant_tva_cents = if let Some(tva) = self.montant_tva_cents {
-            tva
-        } else {
-            // Utiliser le taux par défaut
-            ((self.montant_ht_cents as i128) * (default_tva_rate_ppm as i128) / 1_000_000i128) as i64
-        };
-
-        let montant_ttc_cents = self.montant_ht_cents + montant_tva_cents;
+        let amount_ttc_cents = self.amount_ht_cents + vat_amount_cents;
 
         let now = chrono::Utc::now().naive_utc();
 
         Ok(Operation {
             id: uuid::Uuid::new_v4(),
-            date_facture,
-            date_encaissement,
-            date_paiement,
-            sens,
-            montant_ht_cents: self.montant_ht_cents,
-            montant_tva_cents,
-            montant_ttc_cents,
-            tva_sur_encaissements: self.tva_sur_encaissements,
-            libelle: self.libelle,
-            justificatif_url: self.justificatif_url,
+            invoice_date,
+            payment_date,
+            operation_type,
+            amount_ht_cents: self.amount_ht_cents,
+            vat_amount_cents,
+            amount_ttc_cents,
+            vat_on_payments: self.vat_on_payments,
+            label: self.label,
+            receipt_url: self.receipt_url,
             created_at: now,
             updated_at: now,
         })
@@ -731,59 +722,50 @@ impl CreateOperationDto {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateOperationDto {
     pub id: String,
-    pub date_facture: String,
-    pub libelle: Option<String>,
-    pub montant_ht_cents: i64,
-    pub montant_tva_cents: i64,
-    pub sens: String,
-    pub tva_sur_encaissements: bool,
-    pub date_encaissement: Option<String>,
-    pub date_paiement: Option<String>,
-    pub justificatif_url: Option<String>,
+    pub invoice_date: String,
+    pub label: Option<String>,
+    pub amount_ht_cents: i64,
+    pub vat_amount_cents: i64,
+    pub operation_type: String,
+    pub vat_on_payments: bool,
+    pub payment_date: Option<String>,
+    pub receipt_url: Option<String>,
 }
 
 impl UpdateOperationDto {
     pub fn into_entity(self, existing_operation: Operation) -> Result<Operation, String> {
         let id = uuid::Uuid::parse_str(&self.id)
-            .map_err(|e| format!("ID invalide: {}", e))?;
+            .map_err(|e| format!("ID invalid: {}", e))?;
 
-        let date_facture = chrono::NaiveDate::parse_from_str(&self.date_facture, "%Y-%m-%d")
-            .map_err(|e| format!("Date de facture invalide: {}", e))?;
+        let invoice_date = chrono::NaiveDate::parse_from_str(&self.invoice_date, "%Y-%m-%d")
+            .map_err(|e| format!("Invoice date invalid: {}", e))?;
         
-        let sens = match self.sens.as_str() {
-            "achat" => OperationSens::Achat,
-            "vente" => OperationSens::Vente,
-            _ => return Err("Sens invalide: doit être 'achat' ou 'vente'".into()),
+        let operation_type = match self.operation_type.as_str() {
+            "purchase" => OperationType::Purchase,
+            "sale" => OperationType::Sale,
+            _ => return Err("Operation type invalid: must be 'sale' or 'purchase'".into()),
         };
 
-        let date_encaissement = if let Some(date_str) = self.date_encaissement {
+        let payment_date = if let Some(date_str) = self.payment_date {
             Some(chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
-                .map_err(|e| format!("Date d'encaissement invalide: {}", e))?)
+                .map_err(|e| format!("Payment date invalid: {}", e))?)
         } else {
             None
         };
 
-        let date_paiement = if let Some(date_str) = self.date_paiement {
-            Some(chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
-                .map_err(|e| format!("Date de paiement invalide: {}", e))?)
-        } else {
-            None
-        };
-
-        let montant_ttc_cents = self.montant_ht_cents + self.montant_tva_cents;
+        let amount_ttc_cents = self.amount_ht_cents + self.vat_amount_cents;
 
         Ok(Operation {
             id,
-            date_facture,
-            date_encaissement,
-            date_paiement,
-            sens,
-            montant_ht_cents: self.montant_ht_cents,
-            montant_tva_cents: self.montant_tva_cents,
-            montant_ttc_cents,
-            tva_sur_encaissements: self.tva_sur_encaissements,
-            libelle: self.libelle,
-            justificatif_url: self.justificatif_url,
+            invoice_date,
+            payment_date,
+            operation_type,
+            amount_ht_cents: self.amount_ht_cents,
+            vat_amount_cents: self.vat_amount_cents,
+            amount_ttc_cents,
+            vat_on_payments: self.vat_on_payments,
+            label: self.label,
+            receipt_url: self.receipt_url,
             created_at: existing_operation.created_at, // Preserve creation date
             updated_at: chrono::Utc::now().naive_utc(),
         })

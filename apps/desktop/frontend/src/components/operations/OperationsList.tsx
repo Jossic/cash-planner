@@ -12,9 +12,9 @@ interface OperationsListProps {
   showFilters?: boolean
 }
 
-type SortField = 'date' | 'amount_ht' | 'sens' | 'libelle'
+type SortField = 'date' | 'amount_ht' | 'operation_type' | 'label'
 type SortOrder = 'asc' | 'desc'
-type FilterSens = 'all' | 'vente' | 'achat'
+type FilterOperationType = 'all' | 'sale' | 'purchase'
 
 export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = true }) => {
   const currentPeriod = useCurrentPeriod()
@@ -23,7 +23,7 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterSens, setFilterSens] = useState<FilterSens>('all')
+  const [filterOperationType, setFilterOperationType] = useState<FilterOperationType>('all')
   const [sortField, setSortField] = useState<SortField>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [expandedMonths, setExpandedMonths] = useState<string[]>([currentPeriod.key])
@@ -94,14 +94,14 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(op => 
-        op.libelle?.toLowerCase().includes(term) ||
+        op.label?.toLowerCase().includes(term) ||
         op.id.toLowerCase().includes(term)
       )
     }
     
-    // Filtrage par sens
-    if (filterSens !== 'all') {
-      filtered = filtered.filter(op => op.sens === filterSens)
+    // Filtrage par type d'opération
+    if (filterOperationType !== 'all') {
+      filtered = filtered.filter(op => op.operation_type === filterOperationType)
     }
     
     // Tri
@@ -110,20 +110,20 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
       
       switch (sortField) {
         case 'date':
-          aVal = new Date(a.date_facture).getTime()
-          bVal = new Date(b.date_facture).getTime()
+          aVal = new Date(a.invoice_date).getTime()
+          bVal = new Date(b.invoice_date).getTime()
           break
         case 'amount_ht':
-          aVal = a.montant_ht_cents
-          bVal = b.montant_ht_cents
+          aVal = a.amount_ht_cents
+          bVal = b.amount_ht_cents
           break
-        case 'sens':
-          aVal = a.sens
-          bVal = b.sens
+        case 'operation_type':
+          aVal = a.operation_type
+          bVal = b.operation_type
           break
-        case 'libelle':
-          aVal = a.libelle || ''
-          bVal = b.libelle || ''
+        case 'label':
+          aVal = a.label || ''
+          bVal = b.label || ''
           break
         default:
           return 0
@@ -135,7 +135,7 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
     })
     
     return filtered
-  }, [operations, searchTerm, filterSens, sortField, sortOrder])
+  }, [operations, searchTerm, filterOperationType, sortField, sortOrder])
   
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -167,14 +167,14 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
     }
   }
   
-  const getSensColor = (sens: 'vente' | 'achat') => {
-    return sens === 'vente' 
+  const getOperationTypeColor = (operation_type: 'sale' | 'purchase') => {
+    return operation_type === 'sale' 
       ? 'text-green-400 bg-green-900/20'
       : 'text-orange-400 bg-orange-900/20'
   }
   
-  const getSensIcon = (sens: 'vente' | 'achat') => {
-    return sens === 'vente' ? '↗' : '↙'
+  const getOperationTypeIcon = (operation_type: 'sale' | 'purchase') => {
+    return operation_type === 'sale' ? '↗' : '↙'
   }
   
   if (isLoading) {
@@ -231,13 +231,13 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-dark-400" />
               <select
-                value={filterSens}
-                onChange={(e) => setFilterSens(e.target.value as FilterSens)}
+                value={filterOperationType}
+                onChange={(e) => setFilterOperationType(e.target.value as FilterOperationType)}
                 className="px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-dark-100 focus:outline-none focus:border-blue-500"
               >
                 <option value="all">Tous</option>
-                <option value="vente">Ventes</option>
-                <option value="achat">Achats</option>
+                <option value="sale">Ventes</option>
+                <option value="purchase">Achats</option>
               </select>
             </div>
           </div>
@@ -251,7 +251,7 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
                 <tr className="border-b border-dark-700">
                   <th className="text-left py-3 px-2">
                     <button
-                      onClick={() => handleSort('sens')}
+                      onClick={() => handleSort('operation_type')}
                       className="flex items-center text-dark-200 hover:text-dark-100 font-medium"
                     >
                       Type
@@ -269,7 +269,7 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
                   </th>
                   <th className="text-left py-3 px-2">
                     <button
-                      onClick={() => handleSort('libelle')}
+                      onClick={() => handleSort('label')}
                       className="flex items-center text-dark-200 hover:text-dark-100 font-medium"
                     >
                       Description
@@ -302,49 +302,49 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
                     <td className="py-3 px-2">
                       <span className={cn(
                         "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
-                        getSensColor(operation.sens)
+                        getOperationTypeColor(operation.operation_type)
                       )}>
-                        <span className="mr-1">{getSensIcon(operation.sens)}</span>
-                        {operation.sens === 'vente' ? 'Vente' : 'Achat'}
+                        <span className="mr-1">{getOperationTypeIcon(operation.operation_type)}</span>
+                        {operation.operation_type === 'sale' ? 'Vente' : 'Achat'}
                       </span>
                     </td>
                     <td className="py-3 px-2 text-dark-200">
                       <div>
-                        <div className="font-medium">{formatDate(operation.date_facture)}</div>
-                        {operation.date_encaissement && (
+                        <div className="font-medium">{formatDate(operation.invoice_date)}</div>
+                        {operation.payment_date && (
                           <div className="text-xs text-dark-400">
-                            Enc: {formatDate(operation.date_encaissement)}
+                            Enc: {formatDate(operation.payment_date)}
                           </div>
                         )}
                       </div>
                     </td>
                     <td className="py-3 px-2 text-dark-200">
                       <div>
-                        <div>{operation.libelle || 'Sans libellé'}</div>
-                        {operation.tva_sur_encaissements && (
+                        <div>{operation.label || 'Sans libellé'}</div>
+                        {operation.vat_on_payments && (
                           <div className="text-xs text-blue-400">TVA sur encaissements</div>
                         )}
                       </div>
                     </td>
                     <td className="py-3 px-2 text-right text-dark-100 font-medium">
-                      {formatCurrency(operation.montant_ht_cents)}
+                      {formatCurrency(operation.amount_ht_cents)}
                     </td>
                     <td className="py-3 px-2 text-right text-dark-200">
                       <div>
-                        <div>{formatCurrency(operation.montant_tva_cents)}</div>
+                        <div>{formatCurrency(operation.vat_amount_cents)}</div>
                         <div className="text-xs text-dark-400">20%</div>
                       </div>
                     </td>
                     <td className="py-3 px-2 text-right text-dark-100 font-medium">
-                      {formatCurrency(operation.montant_ttc_cents)}
+                      {formatCurrency(operation.amount_ttc_cents)}
                     </td>
                     <td className="py-3 px-2">
                       <div className="flex items-center justify-center space-x-2">
-                        {operation.justificatif_url && (
+                        {operation.receipt_url && (
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleOpenFile(operation.justificatif_url!)}
+                            onClick={() => handleOpenFile(operation.receipt_url!)}
                             className="p-1 text-blue-400 hover:text-blue-300"
                             title="Ouvrir le justificatif"
                           >
@@ -379,12 +379,12 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
               <FileText className="h-12 w-12 mx-auto mb-2" />
               <p>Aucune opération trouvée</p>
             </div>
-            {searchTerm || filterSens !== 'all' ? (
+            {searchTerm || filterOperationType !== 'all' ? (
               <Button
                 variant="secondary"
                 onClick={() => {
                   setSearchTerm('')
-                  setFilterSens('all')
+                  setFilterOperationType('all')
                 }}
                 className="bg-dark-700 hover:bg-dark-600 text-dark-200"
               >

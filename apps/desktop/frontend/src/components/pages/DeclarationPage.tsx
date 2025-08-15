@@ -121,8 +121,8 @@ export const DeclarationPage: React.FC = () => {
   }, [operations, selectedPeriod.periodKey])
 
   const calculateDeclaration = (periodKey: string, operations: Operation[]): DeclarationCalculation => {
-    const ventes = operations.filter(op => op.sens === 'vente')
-    const achats = operations.filter(op => op.sens === 'achat')
+    const ventes = operations.filter(op => op.operation_type === 'sale')
+    const achats = operations.filter(op => op.operation_type === 'purchase')
     
     console.log('📊 Calcul déclaration pour', periodKey)
     console.log('  - Ventes:', ventes.length)
@@ -142,33 +142,33 @@ export const DeclarationPage: React.FC = () => {
       
       console.log('  Vente:', {
         id: vente.id,
-        date_facture: vente.date_facture,
-        date_encaissement: vente.date_encaissement,
-        montant_ht_cents: vente.montant_ht_cents,
-        tva_sur_encaissements: vente.tva_sur_encaissements
+        invoice_date: vente.invoice_date,
+        payment_date: vente.payment_date,
+        amount_ht_cents: vente.amount_ht_cents,
+        vat_on_payments: vente.vat_on_payments
       })
       
       // Pour les freelancers français : TVA sur encaissements est la règle
       // Si pas de date d'encaissement, on utilise la date de l'opération
-      if (vente.date_encaissement) {
+      if (vente.payment_date) {
         // Vérifier si la date d'encaissement est dans la période
-        if (vente.date_encaissement.startsWith(periodKey)) {
+        if (vente.payment_date.startsWith(periodKey)) {
           includeInPeriod = true
           console.log('    ✓ Incluse (encaissement dans période)')
         }
       } else {
         // Si pas de date d'encaissement, on vérifie la date de facturation
         // C'est le cas pour les factures pas encore payées mais qu'on veut déclarer
-        if (vente.date_facture && vente.date_facture.startsWith(periodKey)) {
+        if (vente.invoice_date && vente.invoice_date.startsWith(periodKey)) {
           includeInPeriod = true
           console.log('    ✓ Incluse (date facturation dans période, pas d\'encaissement)')
         }
       }
       
       if (includeInPeriod) {
-        tvaCollectee += vente.montant_tva_cents || 0
-        caEncaisse += vente.montant_ht_cents || 0
-        console.log('    → TVA:', vente.montant_tva_cents, 'CA:', vente.montant_ht_cents)
+        tvaCollectee += vente.vat_amount_cents || 0
+        caEncaisse += vente.amount_ht_cents || 0
+        console.log('    → TVA:', vente.vat_amount_cents, 'CA:', vente.amount_ht_cents)
       }
     })
     
@@ -186,27 +186,27 @@ export const DeclarationPage: React.FC = () => {
       
       console.log('  Achat:', {
         id: achat.id,
-        date_facture: achat.date_facture,
-        date_encaissement: achat.date_encaissement,
-        montant_ttc_cents: achat.montant_ttc_cents,
-        montant_tva_cents: achat.montant_tva_cents
+        invoice_date: achat.invoice_date,
+        payment_date: achat.payment_date,
+        amount_ttc_cents: achat.amount_ttc_cents,
+        vat_amount_cents: achat.vat_amount_cents
       })
       
-      if (achat.date_encaissement) {
+      if (achat.payment_date) {
         // Si on a une date de paiement, l'utiliser
-        if (achat.date_encaissement.startsWith(periodKey)) {
+        if (achat.payment_date.startsWith(periodKey)) {
           includeInPeriod = true
           console.log('    ✓ Inclus (paiement dans période)')
         }
-      } else if (achat.date_facture && achat.date_facture.startsWith(periodKey)) {
+      } else if (achat.invoice_date && achat.invoice_date.startsWith(periodKey)) {
         // Sinon utiliser la date de facturation
         includeInPeriod = true
         console.log('    ✓ Inclus (date facturation dans période)')
       }
       
       if (includeInPeriod) {
-        tvaDeductible += achat.montant_tva_cents || 0
-        console.log('    → TVA déductible:', achat.montant_tva_cents)
+        tvaDeductible += achat.vat_amount_cents || 0
+        console.log('    → TVA déductible:', achat.vat_amount_cents)
       }
     })
     

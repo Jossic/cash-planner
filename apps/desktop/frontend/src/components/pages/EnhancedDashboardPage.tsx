@@ -75,26 +75,26 @@ export const EnhancedDashboardPage: React.FC<EnhancedDashboardPageProps> = ({ on
   const stats = React.useMemo(() => {
     const ventesHt = ventes.reduce((sum, op) => {
       // Inclure selon la logique TVA
-      if (op.tva_sur_encaissements) {
-        return op.encaissement_date?.startsWith(currentPeriod.key) ? sum + op.amount_ht_cents : sum
+      if (op.vat_on_payments) {
+        return op.payment_date?.startsWith(currentPeriod.key) ? sum + op.amount_ht_cents : sum
       } else {
-        return op.date.startsWith(currentPeriod.key) ? sum + op.amount_ht_cents : sum
+        return op.invoice_date.startsWith(currentPeriod.key) ? sum + op.amount_ht_cents : sum
       }
     }, 0)
     
     const achatsTtc = achats
-      .filter(op => op.date.startsWith(currentPeriod.key))
+      .filter(op => op.invoice_date.startsWith(currentPeriod.key))
       .reduce((sum, op) => sum + op.amount_ttc_cents, 0)
     
     const tvaCollectee = ventes
       .filter(op => {
-        if (op.tva_sur_encaissements) {
-          return op.encaissement_date?.startsWith(currentPeriod.key)
+        if (op.vat_on_payments) {
+          return op.payment_date?.startsWith(currentPeriod.key)
         } else {
-          return op.date.startsWith(currentPeriod.key)
+          return op.invoice_date.startsWith(currentPeriod.key)
         }
       })
-      .reduce((sum, op) => sum + op.tva_cents, 0)
+      .reduce((sum, op) => sum + op.vat_amount_cents, 0)
     
     const tvaDeductible = achats
       .filter(op => op.date.startsWith(currentPeriod.key))
