@@ -189,6 +189,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     
     setDataLoading(true);
     try {
+      // Vérifier si nous sommes dans l'environnement Tauri
+      if (!TauriClient.isTauriEnvironment()) {
+        console.warn('⚠️ Environnement Tauri non détecté. Utilisez "npm run desktop:dev" pour lancer l\'application Tauri.');
+        throw new Error('Environnement Tauri requis');
+      }
+
       console.log('🔄 Chargement des données dashboard depuis le backend pour:', selectedPeriods);
       
       const dashboardPeriods: DashboardPeriodData[] = [];
@@ -203,7 +209,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
         
         try {
           // Utiliser cmd_get_dashboard_v2 pour le nouveau modèle Operations
-          const periodDashboard = await invoke('cmd_get_dashboard_v2', { month: year, m: month });
+          const periodDashboard = await TauriClient.safeInvoke('cmd_get_dashboard_v2', { month: year, m: month });
           console.log(`📊 Données Tauri pour ${periodKey}:`, periodDashboard);
           
           const periodData: DashboardPeriodData = {
@@ -263,29 +269,67 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       setDashboardData(result);
     } catch (error) {
       console.error('❌ Erreur chargement dashboard:', error);
-      // Fallback vers des données vides
-      setDashboardData({
-        periods: selectedPeriods.map(periodKey => ({
-          monthId: periodKey,
-          revenue: 0,
-          expenses: 0,
-          vatDue: 0,
-          urssafDue: 0,
-          available: 0,
-          invoicesCount: 0,
-          expensesCount: 0,
-        })),
-        yearlyOverview: {
-          totalRevenue: 0,
-          totalExpenses: 0,
-          totalVat: 0,
-          totalUrssaf: 0,
-          averageMonthlyRevenue: 0,
-          growthRate: 0
-        },
-        treasuryProjection: { currentCash: 0, projectedCash: {}, confidence: 'low', assumptionsUsed: [] },
-        alerts: []
-      });
+      
+      if (error instanceof Error && error.message.includes('Environnement Tauri requis')) {
+        // Erreur spécifique Tauri - afficher un message informatif
+        setDashboardData({
+          periods: selectedPeriods.map(periodKey => ({
+            monthId: periodKey,
+            revenue: 0,
+            expenses: 0,
+            vatDue: 0,
+            urssafDue: 0,
+            available: 0,
+            invoicesCount: 0,
+            expensesCount: 0,
+          })),
+          yearlyOverview: {
+            totalRevenue: 0,
+            totalExpenses: 0,
+            totalVat: 0,
+            totalUrssaf: 0,
+            averageMonthlyRevenue: 0,
+            growthRate: 0
+          },
+          treasuryProjection: { 
+            currentCash: 0, 
+            projectedCash: {}, 
+            confidence: 'low', 
+            assumptionsUsed: ['Données indisponibles - Environnement Tauri requis'] 
+          },
+          alerts: [{
+            id: 'tauri-required',
+            type: 'warning',
+            title: 'Environnement Tauri requis',
+            message: 'Pour accéder aux vraies données, lancez l\'application avec "npm run desktop:dev"',
+            actionRequired: true
+          }]
+        });
+      } else {
+        // Autres erreurs - fallback vers des données vides
+        setDashboardData({
+          periods: selectedPeriods.map(periodKey => ({
+            monthId: periodKey,
+            revenue: 0,
+            expenses: 0,
+            vatDue: 0,
+            urssafDue: 0,
+            available: 0,
+            invoicesCount: 0,
+            expensesCount: 0,
+          })),
+          yearlyOverview: {
+            totalRevenue: 0,
+            totalExpenses: 0,
+            totalVat: 0,
+            totalUrssaf: 0,
+            averageMonthlyRevenue: 0,
+            growthRate: 0
+          },
+          treasuryProjection: { currentCash: 0, projectedCash: {}, confidence: 'low', assumptionsUsed: [] },
+          alerts: []
+        });
+      }
     } finally {
       setDataLoading(false);
     }

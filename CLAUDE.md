@@ -98,7 +98,7 @@ SQLite database with migrations in `crates/infra/migrations/`. Schema includes:
 ## Business Rules
 
 ### VAT Calculation (French "TVA sur encaissements")
-- VAT is calculated on **payment date** not invoice date
+- VAT is calculated on **payment date** not invoice date (only for prestation)
 - `TVA_due = VAT_collected - VAT_deductible` for the month
 - VAT declaration on day 12, payment on day 20 of following month
 

@@ -31,7 +31,9 @@
             "core:app:allow-version",
             "core:app:allow-name",
             "fs:allow-read-file",
-            "fs:default"
+            "fs:default",
+            "opener:allow-open-url",
+            "opener:allow-default-urls"
           ]
         }
       ]

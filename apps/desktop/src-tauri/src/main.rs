@@ -21,14 +21,44 @@ struct AppState(Arc<AppService>);
 
 #[tauri::command]
 async fn cmd_open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    // Ouvrir l'URL avec le shell plugin de Tauri
-    use tauri_plugin_shell::ShellExt;
+    // Ouvrir l'URL avec le plugin opener (recommandé)
+    use tauri_plugin_opener::OpenerExt;
     
-    app.shell()
-        .open(url, None)
-        .map_err(|e| format!("Impossible d'ouvrir l'URL: {}", e))?;
+    println!("🔗 [cmd_open_url] Tentative d'ouverture de l'URL: {}", url);
     
-    Ok(())
+    // Validation de base de l'URL
+    if url.is_empty() {
+        let error_msg = "URL vide fournie".to_string();
+        eprintln!("❌ [cmd_open_url] {}", error_msg);
+        return Err(error_msg);
+    }
+    
+    // Vérifier le format de l'URL
+    if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("file://") {
+        let error_msg = format!("Format d'URL non supporté: '{}'. Doit commencer par http://, https:// ou file://", url);
+        eprintln!("❌ [cmd_open_url] {}", error_msg);
+        return Err(error_msg);
+    }
+    
+    // Utiliser le nouveau plugin opener
+    match app.opener().open_url(&url, None::<&str>) {
+        Ok(_) => {
+            println!("✅ [cmd_open_url] URL ouverte avec succès: {}", url);
+            Ok(())
+        }
+        Err(e) => {
+            let error_msg = format!("Échec d'ouverture de l'URL '{}': {}", url, e);
+            eprintln!("❌ [cmd_open_url] {}", error_msg);
+            
+            // Log plus détaillé pour le diagnostic
+            eprintln!("📋 [cmd_open_url] Détails de l'erreur:");
+            eprintln!("   - URL: {}", url);
+            eprintln!("   - Type d'erreur: {}", e);
+            eprintln!("   - Plugin utilisé: tauri-plugin-opener v2");
+            
+            Err(error_msg)
+        }
+    }
 }
 
 #[tauri::command]
@@ -116,6 +146,7 @@ fn data_dir<R: tauri::Runtime>(_app: &tauri::App<R>) -> PathBuf {
 
 fn main() {
     tauri::Builder::<tauri::Wry>::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app: &mut tauri::App<tauri::Wry>| {
             let base = data_dir(app);
             std::fs::create_dir_all(&base).ok();

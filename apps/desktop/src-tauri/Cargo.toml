@@ -19,6 +19,7 @@ tauri-plugin-fs = { workspace = true }
 tauri-plugin-os = { workspace = true }
 tauri-plugin-updater = { workspace = true }
 tauri-plugin-store = { workspace = true }
+tauri-plugin-opener = { workspace = true }
 parking_lot = { workspace = true }
 once_cell = { workspace = true }
 domain = { path = "../../../crates/domain" }

@@ -27,6 +27,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-store = "2"
+tauri-plugin-opener = "2"
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio-rustls", "macros", "migrate", "sqlite", "chrono", "uuid"] }
 parking_lot = "0.12"

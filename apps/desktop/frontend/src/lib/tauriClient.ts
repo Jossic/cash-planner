@@ -24,6 +24,18 @@ import type {
  * et le nouveau modèle unifié (Operation) pour faciliter la migration.
  */
 export class TauriClient {
+  // Check if we're running in Tauri environment
+  static isTauriEnvironment(): boolean {
+    return typeof window !== 'undefined' && '__TAURI__' in window
+  }
+
+  // Safe wrapper for Tauri invoke calls
+  static async safeInvoke<T>(command: string, args?: Record<string, any>): Promise<T> {
+    if (!this.isTauriEnvironment()) {
+      throw new Error(`Tauri environment not available. Command: ${command}`)
+    }
+    return invoke(command, args)
+  }
   // Dashboard operations
   static async getDashboard(month: MonthId): Promise<DashboardData> {
     return invoke('cmd_dashboard', { month: month.year, m: month.month })

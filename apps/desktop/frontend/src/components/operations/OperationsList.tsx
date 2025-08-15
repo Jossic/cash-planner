@@ -6,7 +6,7 @@ import type { Operation } from '../../types'
 import { useCurrentPeriod } from '../../stores/useAppStore'
 import { cn } from '../../lib/utils'
 import { TauriClient } from '../../lib/tauriClient'
-import { invoke } from '@tauri-apps/api/core'
+import { openMinioJustificatif } from '../../lib/fileOpener'
 
 interface OperationsListProps {
   showFilters?: boolean
@@ -158,14 +158,12 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
   
   const handleOpenFile = async (fileUrl: string) => {
     try {
-      console.log('🔗 Ouverture du fichier:', fileUrl)
-      
-      // Utiliser notre commande Tauri personnalisée
-      await invoke('cmd_open_url', { url: fileUrl })
-      console.log('✅ Fichier ouvert avec Tauri')
+      console.log('🔗 Ouverture du justificatif:', fileUrl)
+      await openMinioJustificatif(fileUrl)
+      console.log('✅ Justificatif ouvert avec succès')
     } catch (error) {
-      console.error('❌ Erreur ouverture fichier:', error)
-      alert('Impossible d\'ouvrir le fichier: ' + (error instanceof Error ? error.message : 'Erreur inconnue'))
+      console.error('❌ Erreur ouverture justificatif:', error)
+      alert('Impossible d\'ouvrir le justificatif: ' + (error instanceof Error ? error.message : 'Erreur inconnue'))
     }
   }
   
