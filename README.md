@@ -18,7 +18,7 @@ Est-ce que tu penses qu'un tel outil serait faisable ? Si oui, est-ce que tu pou
 - Liste des différentes pages de l'interface avec un wireframe pour chaque page
 - Liste de chacune des fonctionnalités
 - Détail sur l'architecture (clean archi: back: controller -> command/query handler -> gateway/repository, front: component -> hook/store -> use case -> gateways)
-- Stack: Tauri rust / SolidJS (tailwind)
+- Stack: Tauri rust / React (tailwind)
 - Tout autre choses qui serait nécessaire pour transmettre à un dev pour développer cette application
 
 
@@ -45,7 +45,7 @@ Local-first, offline. Pas de cloud, SQLite embarqué, exports CSV/PDF.
    pgsql
    Copy
    Edit
-   +--------------------------------------------------------------+
+   +--------------------------------------------------------------+``
    |  Header: Mois courant  | Solde banque | A mettre de côté     |
    +------------------------+-------------------------------------+
    |  Cartes:                                                   |

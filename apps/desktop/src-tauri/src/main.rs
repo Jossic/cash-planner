@@ -2,7 +2,7 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use app::{AppDeps, AppService, CreateInvoiceDto, CreateInvoiceSimpleDto, CreateWorkingDayDto, CreateSimulationDto, EnhancedDashboardData, CreateOperationDto, UpdateOperationDto};
+use app::{AppDeps, AppService, CreateInvoiceDto, CreateInvoiceSimpleDto, CreateWorkingDayDto, CreateSimulationDto, EnhancedDashboardData, CreateOperationDto, UpdateOperationDto, CreateYearlyPlanningDto, UpdateYearlyPlanningDto, UpdateMonthPlanningDto};
 use bytes::Bytes;
 use chrono::NaiveDate;
 use domain::{
@@ -13,7 +13,9 @@ use domain::{
     // Operation model
     Operation, OperationType,
     // Annual tax declaration
-    AnnualTaxData
+    AnnualTaxData,
+    // Yearly Planning
+    YearlyPlanning, MonthPlanning
 };
 use infra::{connect_and_migrate, MinioService, MinioConfig, FileInfo, StorageStats};
 use serde::{Deserialize, Serialize};
@@ -176,6 +178,7 @@ fn main() {
                     tax_schedules: Arc::new(repos.tax_schedules()),
                     simulations: Arc::new(repos.simulations()),
                     kpis: Arc::new(repos.kpis()),
+                    yearly_planning: Arc::new(repos.yearly_planning()),
                     // External services
                     minio_service: Arc::new(minio_service),
                 };
@@ -243,7 +246,14 @@ fn main() {
             cmd_list_justificatifs_by_month,
             cmd_get_storage_stats,
             // Annual tax declaration
-            cmd_get_annual_tax_data
+            cmd_get_annual_tax_data,
+            // Yearly Planning
+            cmd_create_yearly_planning,
+            cmd_update_yearly_planning,
+            cmd_get_yearly_planning,
+            cmd_delete_yearly_planning,
+            cmd_list_yearly_plannings,
+            cmd_update_month_planning
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -624,4 +634,47 @@ async fn cmd_get_storage_stats(state: State<'_, AppState>) -> Result<StorageStat
 #[tauri::command]
 async fn cmd_get_annual_tax_data(state: State<'_, AppState>, year: i32) -> Result<AnnualTaxData, String> {
     state.0.get_annual_tax_data(year).await.map_err(|e| e.to_string())
+}
+
+// ============ Yearly Planning Commands ============
+
+/// Create a yearly planning
+#[tauri::command]
+async fn cmd_create_yearly_planning(state: State<'_, AppState>, dto: CreateYearlyPlanningDto) -> Result<(), String> {
+    state.0.create_yearly_planning(dto).await.map_err(|e| e.to_string())
+}
+
+/// Update a yearly planning
+#[tauri::command]
+async fn cmd_update_yearly_planning(state: State<'_, AppState>, dto: UpdateYearlyPlanningDto) -> Result<(), String> {
+    state.0.update_yearly_planning(dto).await.map_err(|e| e.to_string())
+}
+
+/// Get yearly planning for a specific year
+#[tauri::command]
+async fn cmd_get_yearly_planning(state: State<'_, AppState>, year: i32) -> Result<Option<YearlyPlanning>, String> {
+    state.0.get_yearly_planning(year).await.map_err(|e| e.to_string())
+}
+
+/// Delete yearly planning for a specific year
+#[tauri::command]
+async fn cmd_delete_yearly_planning(state: State<'_, AppState>, year: i32) -> Result<(), String> {
+    state.0.delete_yearly_planning(year).await.map_err(|e| e.to_string())
+}
+
+/// List all yearly plannings
+#[tauri::command]
+async fn cmd_list_yearly_plannings(state: State<'_, AppState>) -> Result<Vec<YearlyPlanning>, String> {
+    state.0.list_yearly_plannings().await.map_err(|e| e.to_string())
+}
+
+/// Update a specific month planning
+#[tauri::command]
+async fn cmd_update_month_planning(
+    state: State<'_, AppState>, 
+    year: i32, 
+    month: u32, 
+    dto: UpdateMonthPlanningDto
+) -> Result<(), String> {
+    state.0.update_month_planning(year, month, dto).await.map_err(|e| e.to_string())
 }

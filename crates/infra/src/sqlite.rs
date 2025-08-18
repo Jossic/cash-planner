@@ -8,7 +8,9 @@ use domain::{
     WorkingDay, WorkingDayRepo, WorkingDaysStats, TaxSchedule, TaxScheduleRepo, TaxType, TaxScheduleStatus,
     Simulation, SimulationRepo, SimulationParameters, SimulationScenario,
     MonthlyKPI, KPIRepo, Operation, OperationRepo, OperationType,
-    Declaration, DeclarationRepo, DeclarationType, DeclarationStatus
+    Declaration, DeclarationRepo, DeclarationType, DeclarationStatus,
+    // Yearly Planning imports
+    YearlyPlanning, MonthPlanning, YearlyPlanningRepo
 };
 use sqlx::{sqlite::{SqliteConnectOptions}, Pool, Row, Sqlite};
 
@@ -48,6 +50,8 @@ pub struct SqliteTaxScheduleRepo { pool: Pool<Sqlite> }
 pub struct SqliteSimulationRepo { pool: Pool<Sqlite> }
 #[derive(Clone)]
 pub struct SqliteKPIRepo { pool: Pool<Sqlite> }
+#[derive(Clone)]
+pub struct SqliteYearlyPlanningRepo { pool: Pool<Sqlite> }
 
 impl SqliteRepos {
     pub fn invoices(&self) -> SqliteInvoiceRepo { SqliteInvoiceRepo { pool: self.pool.clone() } }
@@ -63,6 +67,7 @@ impl SqliteRepos {
     pub fn tax_schedules(&self) -> SqliteTaxScheduleRepo { SqliteTaxScheduleRepo { pool: self.pool.clone() } }
     pub fn simulations(&self) -> SqliteSimulationRepo { SqliteSimulationRepo { pool: self.pool.clone() } }
     pub fn kpis(&self) -> SqliteKPIRepo { SqliteKPIRepo { pool: self.pool.clone() } }
+    pub fn yearly_planning(&self) -> SqliteYearlyPlanningRepo { SqliteYearlyPlanningRepo { pool: self.pool.clone() } }
 }
 
 #[async_trait::async_trait]
@@ -1295,5 +1300,250 @@ impl DeclarationRepo for SqliteDeclarationRepo {
             .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
         
         Ok(rows.into_iter().map(|r| row_to_declaration(&r)).collect())
+    }
+}
+
+// ============ Yearly Planning Repository Implementation ============
+
+#[async_trait::async_trait]
+impl YearlyPlanningRepo for SqliteYearlyPlanningRepo {
+    async fn create_yearly_planning(&self, planning: YearlyPlanning) -> DomainResult<()> {
+        let mut tx = self.pool.begin().await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        // Insert yearly planning
+        sqlx::query(r#"
+            INSERT INTO yearly_planning (id, year, tjm_cents, max_working_days_limit, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        "#)
+            .bind(planning.id.to_string())
+            .bind(planning.year)
+            .bind(planning.tjm_cents)
+            .bind(planning.max_working_days_limit)
+            .bind(planning.created_at.to_string())
+            .bind(planning.updated_at.to_string())
+            .execute(&mut *tx).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        // Insert all month plannings
+        for month in &planning.months {
+            sqlx::query(r#"
+                INSERT INTO month_planning (id, year, month, max_working_days, holidays_taken, 
+                                          public_holidays, working_days, estimated_revenue_cents, 
+                                          created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#)
+                .bind(month.id.to_string())
+                .bind(month.year)
+                .bind(month.month as i64)
+                .bind(month.max_working_days)
+                .bind(month.holidays_taken)
+                .bind(month.public_holidays)
+                .bind(month.working_days)
+                .bind(month.estimated_revenue_cents)
+                .bind(month.created_at.to_string())
+                .bind(month.updated_at.to_string())
+                .execute(&mut *tx).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        }
+        
+        tx.commit().await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn update_yearly_planning(&self, planning: YearlyPlanning) -> DomainResult<()> {
+        let mut tx = self.pool.begin().await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        // Update yearly planning
+        sqlx::query(r#"
+            UPDATE yearly_planning 
+            SET tjm_cents = ?, max_working_days_limit = ?, updated_at = ?
+            WHERE year = ?
+        "#)
+            .bind(planning.tjm_cents)
+            .bind(planning.max_working_days_limit)
+            .bind(planning.updated_at.to_string())
+            .bind(planning.year)
+            .execute(&mut *tx).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        // Delete existing month plannings and recreate them
+        sqlx::query("DELETE FROM month_planning WHERE year = ?")
+            .bind(planning.year)
+            .execute(&mut *tx).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        // Insert updated month plannings
+        for month in &planning.months {
+            sqlx::query(r#"
+                INSERT INTO month_planning (id, year, month, max_working_days, holidays_taken, 
+                                          public_holidays, working_days, estimated_revenue_cents, 
+                                          created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#)
+                .bind(month.id.to_string())
+                .bind(month.year)
+                .bind(month.month as i64)
+                .bind(month.max_working_days)
+                .bind(month.holidays_taken)
+                .bind(month.public_holidays)
+                .bind(month.working_days)
+                .bind(month.estimated_revenue_cents)
+                .bind(month.created_at.to_string())
+                .bind(month.updated_at.to_string())
+                .execute(&mut *tx).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        }
+        
+        tx.commit().await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn get_yearly_planning(&self, year: i32) -> DomainResult<Option<YearlyPlanning>> {
+        // Get yearly planning
+        let yearly_row = sqlx::query(r#"
+            SELECT id, year, tjm_cents, max_working_days_limit, created_at, updated_at
+            FROM yearly_planning 
+            WHERE year = ?
+        "#)
+            .bind(year)
+            .fetch_optional(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        let Some(yearly_row) = yearly_row else { return Ok(None); };
+        
+        // Get all month plannings for this year
+        let month_rows = sqlx::query(r#"
+            SELECT id, year, month, max_working_days, holidays_taken, public_holidays, 
+                   working_days, estimated_revenue_cents, created_at, updated_at
+            FROM month_planning 
+            WHERE year = ? 
+            ORDER BY month ASC
+        "#)
+            .bind(year)
+            .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        let months: Vec<MonthPlanning> = month_rows.iter().map(|row| MonthPlanning {
+            id: uuid::Uuid::parse_str(&row.get::<String, _>("id")).unwrap(),
+            year: row.get::<i64, _>("year") as i32,
+            month: row.get::<i64, _>("month") as u32,
+            max_working_days: row.get::<i64, _>("max_working_days") as i32,
+            holidays_taken: row.get::<i64, _>("holidays_taken") as i32,
+            public_holidays: row.get::<i64, _>("public_holidays") as i32,
+            working_days: row.get::<i64, _>("working_days") as i32,
+            estimated_revenue_cents: row.get::<i64, _>("estimated_revenue_cents"),
+            created_at: NaiveDateTime::parse_from_str(&row.get::<String, _>("created_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+            updated_at: NaiveDateTime::parse_from_str(&row.get::<String, _>("updated_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+        }).collect();
+        
+        let yearly_planning = YearlyPlanning {
+            id: uuid::Uuid::parse_str(&yearly_row.get::<String, _>("id")).unwrap(),
+            year: yearly_row.get::<i64, _>("year") as i32,
+            tjm_cents: yearly_row.get::<i64, _>("tjm_cents"),
+            max_working_days_limit: yearly_row.get::<i64, _>("max_working_days_limit") as i32,
+            months,
+            created_at: NaiveDateTime::parse_from_str(&yearly_row.get::<String, _>("created_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+            updated_at: NaiveDateTime::parse_from_str(&yearly_row.get::<String, _>("updated_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+        };
+        
+        Ok(Some(yearly_planning))
+    }
+
+    async fn delete_yearly_planning(&self, year: i32) -> DomainResult<()> {
+        // Delete will cascade to month_planning thanks to foreign key
+        sqlx::query("DELETE FROM yearly_planning WHERE year = ?")
+            .bind(year)
+            .execute(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn list_yearly_plannings(&self) -> DomainResult<Vec<YearlyPlanning>> {
+        let yearly_rows = sqlx::query(r#"
+            SELECT id, year, tjm_cents, max_working_days_limit, created_at, updated_at
+            FROM yearly_planning 
+            ORDER BY year DESC
+        "#)
+            .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        let mut plannings = Vec::new();
+        
+        for yearly_row in yearly_rows {
+            let year = yearly_row.get::<i64, _>("year") as i32;
+            
+            // Get month plannings for this year
+            let month_rows = sqlx::query(r#"
+                SELECT id, year, month, max_working_days, holidays_taken, public_holidays, 
+                       working_days, estimated_revenue_cents, created_at, updated_at
+                FROM month_planning 
+                WHERE year = ? 
+                ORDER BY month ASC
+            "#)
+                .bind(year)
+                .fetch_all(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+            
+            let months: Vec<MonthPlanning> = month_rows.iter().map(|row| MonthPlanning {
+                id: uuid::Uuid::parse_str(&row.get::<String, _>("id")).unwrap(),
+                year: row.get::<i64, _>("year") as i32,
+                month: row.get::<i64, _>("month") as u32,
+                max_working_days: row.get::<i64, _>("max_working_days") as i32,
+                holidays_taken: row.get::<i64, _>("holidays_taken") as i32,
+                public_holidays: row.get::<i64, _>("public_holidays") as i32,
+                working_days: row.get::<i64, _>("working_days") as i32,
+                estimated_revenue_cents: row.get::<i64, _>("estimated_revenue_cents"),
+                created_at: NaiveDateTime::parse_from_str(&row.get::<String, _>("created_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+                updated_at: NaiveDateTime::parse_from_str(&row.get::<String, _>("updated_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+            }).collect();
+            
+            let yearly_planning = YearlyPlanning {
+                id: uuid::Uuid::parse_str(&yearly_row.get::<String, _>("id")).unwrap(),
+                year,
+                tjm_cents: yearly_row.get::<i64, _>("tjm_cents"),
+                max_working_days_limit: yearly_row.get::<i64, _>("max_working_days_limit") as i32,
+                months,
+                created_at: NaiveDateTime::parse_from_str(&yearly_row.get::<String, _>("created_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+                updated_at: NaiveDateTime::parse_from_str(&yearly_row.get::<String, _>("updated_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+            };
+            
+            plannings.push(yearly_planning);
+        }
+        
+        Ok(plannings)
+    }
+
+    async fn update_month_planning(&self, month_planning: MonthPlanning) -> DomainResult<()> {
+        sqlx::query(r#"
+            UPDATE month_planning 
+            SET max_working_days = ?, holidays_taken = ?, public_holidays = ?, 
+                working_days = ?, estimated_revenue_cents = ?, updated_at = ?
+            WHERE year = ? AND month = ?
+        "#)
+            .bind(month_planning.max_working_days)
+            .bind(month_planning.holidays_taken)
+            .bind(month_planning.public_holidays)
+            .bind(month_planning.working_days)
+            .bind(month_planning.estimated_revenue_cents)
+            .bind(month_planning.updated_at.to_string())
+            .bind(month_planning.year)
+            .bind(month_planning.month as i64)
+            .execute(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn get_month_planning(&self, year: i32, month: u32) -> DomainResult<Option<MonthPlanning>> {
+        let row = sqlx::query(r#"
+            SELECT id, year, month, max_working_days, holidays_taken, public_holidays, 
+                   working_days, estimated_revenue_cents, created_at, updated_at
+            FROM month_planning 
+            WHERE year = ? AND month = ?
+        "#)
+            .bind(year)
+            .bind(month as i64)
+            .fetch_optional(&self.pool).await.map_err(|e| DomainError::Repo(e.to_string()))?;
+        
+        Ok(row.map(|row| MonthPlanning {
+            id: uuid::Uuid::parse_str(&row.get::<String, _>("id")).unwrap(),
+            year: row.get::<i64, _>("year") as i32,
+            month: row.get::<i64, _>("month") as u32,
+            max_working_days: row.get::<i64, _>("max_working_days") as i32,
+            holidays_taken: row.get::<i64, _>("holidays_taken") as i32,
+            public_holidays: row.get::<i64, _>("public_holidays") as i32,
+            working_days: row.get::<i64, _>("working_days") as i32,
+            estimated_revenue_cents: row.get::<i64, _>("estimated_revenue_cents"),
+            created_at: NaiveDateTime::parse_from_str(&row.get::<String, _>("created_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+            updated_at: NaiveDateTime::parse_from_str(&row.get::<String, _>("updated_at"), "%Y-%m-%d %H:%M:%S%.f").unwrap(),
+        }))
     }
 }

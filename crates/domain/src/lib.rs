@@ -149,6 +149,33 @@ pub enum ProvisionStatus {
     Overdue,
 }
 
+// ============ Yearly Planning Entities ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct YearlyPlanning {
+    pub id: Uuid,
+    pub year: i32,
+    pub tjm_cents: i64,                    // Tarif journalier moyen en centimes
+    pub max_working_days_limit: i32,       // Limite client principal (214j)
+    pub months: Vec<MonthPlanning>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonthPlanning {
+    pub id: Uuid,
+    pub year: i32,
+    pub month: u32,                        // 1..=12
+    pub max_working_days: i32,             // Jours ouvrables maximum dans le mois
+    pub holidays_taken: i32,               // Congés pris
+    pub public_holidays: i32,              // Jours fériés
+    pub working_days: i32,                 // Jours travaillés = max - holidays - public_holidays
+    pub estimated_revenue_cents: i64,       // CA estimé en centimes
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
 // ============ New Entities for Enhanced Features ============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -426,6 +453,21 @@ pub struct MonthStatus {
 pub trait MonthRepo: Send + Sync {
     async fn get_status(&self, month: &MonthId) -> DomainResult<MonthStatus>;
     async fn close_month(&self, month: &MonthId, closed_at: NaiveDateTime) -> DomainResult<()>;
+}
+
+// ============ Yearly Planning Repository Trait ============
+
+#[async_trait::async_trait]
+pub trait YearlyPlanningRepo: Send + Sync {
+    async fn create_yearly_planning(&self, planning: YearlyPlanning) -> DomainResult<()>;
+    async fn update_yearly_planning(&self, planning: YearlyPlanning) -> DomainResult<()>;
+    async fn get_yearly_planning(&self, year: i32) -> DomainResult<Option<YearlyPlanning>>;
+    async fn delete_yearly_planning(&self, year: i32) -> DomainResult<()>;
+    async fn list_yearly_plannings(&self) -> DomainResult<Vec<YearlyPlanning>>;
+    
+    // Methods for individual month planning
+    async fn update_month_planning(&self, month_planning: MonthPlanning) -> DomainResult<()>;
+    async fn get_month_planning(&self, year: i32, month: u32) -> DomainResult<Option<MonthPlanning>>;
 }
 
 // ============ New Repository Traits ============

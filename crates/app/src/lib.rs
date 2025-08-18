@@ -18,6 +18,7 @@ pub struct AppDeps {
     pub tax_schedules: Arc<dyn TaxScheduleRepo>,
     pub simulations: Arc<dyn SimulationRepo>,
     pub kpis: Arc<dyn KPIRepo>,
+    pub yearly_planning: Arc<dyn YearlyPlanningRepo>,
     // External services
     pub minio_service: Arc<MinioService>,
 }
@@ -885,5 +886,160 @@ impl UpdateOperationDto {
             created_at: existing_operation.created_at, // Preserve creation date
             updated_at: chrono::Utc::now().naive_utc(),
         })
+    }
+}
+
+// ============ Yearly Planning DTOs and Services ============
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateYearlyPlanningDto {
+    pub year: i32,
+    pub tjm_cents: i64,
+    pub max_working_days_limit: i32,
+    pub months: Vec<CreateMonthPlanningDto>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateMonthPlanningDto {
+    pub month: u32,
+    pub max_working_days: i32,
+    pub holidays_taken: i32,
+    pub public_holidays: i32,
+    pub working_days: i32,
+    pub estimated_revenue_cents: i64,
+}
+
+impl CreateYearlyPlanningDto {
+    pub fn to_domain(&self) -> YearlyPlanning {
+        let now = chrono::Utc::now().naive_utc();
+        
+        let months: Vec<MonthPlanning> = self.months.iter().map(|month_dto| MonthPlanning {
+            id: uuid::Uuid::new_v4(),
+            year: self.year,
+            month: month_dto.month,
+            max_working_days: month_dto.max_working_days,
+            holidays_taken: month_dto.holidays_taken,
+            public_holidays: month_dto.public_holidays,
+            working_days: month_dto.working_days,
+            estimated_revenue_cents: month_dto.estimated_revenue_cents,
+            created_at: now,
+            updated_at: now,
+        }).collect();
+
+        YearlyPlanning {
+            id: uuid::Uuid::new_v4(),
+            year: self.year,
+            tjm_cents: self.tjm_cents,
+            max_working_days_limit: self.max_working_days_limit,
+            months,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateYearlyPlanningDto {
+    pub year: i32,
+    pub tjm_cents: i64,
+    pub max_working_days_limit: i32,
+    pub months: Vec<UpdateMonthPlanningDto>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateMonthPlanningDto {
+    pub id: String,
+    pub month: u32,
+    pub max_working_days: i32,
+    pub holidays_taken: i32,
+    pub public_holidays: i32,
+    pub working_days: i32,
+    pub estimated_revenue_cents: i64,
+}
+
+impl UpdateYearlyPlanningDto {
+    pub fn to_domain(&self, existing_planning: &YearlyPlanning) -> YearlyPlanning {
+        let now = chrono::Utc::now().naive_utc();
+        
+        let months: Vec<MonthPlanning> = self.months.iter().map(|month_dto| {
+            let existing_month = existing_planning.months.iter()
+                .find(|m| m.month == month_dto.month);
+            
+            MonthPlanning {
+                id: if let Ok(id) = uuid::Uuid::parse_str(&month_dto.id) {
+                    id
+                } else {
+                    existing_month.map(|m| m.id).unwrap_or_else(|| uuid::Uuid::new_v4())
+                },
+                year: self.year,
+                month: month_dto.month,
+                max_working_days: month_dto.max_working_days,
+                holidays_taken: month_dto.holidays_taken,
+                public_holidays: month_dto.public_holidays,
+                working_days: month_dto.working_days,
+                estimated_revenue_cents: month_dto.estimated_revenue_cents,
+                created_at: existing_month.map(|m| m.created_at).unwrap_or(now),
+                updated_at: now,
+            }
+        }).collect();
+
+        YearlyPlanning {
+            id: existing_planning.id,
+            year: self.year,
+            tjm_cents: self.tjm_cents,
+            max_working_days_limit: self.max_working_days_limit,
+            months,
+            created_at: existing_planning.created_at,
+            updated_at: now,
+        }
+    }
+}
+
+impl AppService {
+    // Yearly Planning Services
+    pub async fn create_yearly_planning(&self, dto: CreateYearlyPlanningDto) -> DomainResult<()> {
+        let planning = dto.to_domain();
+        self.deps.yearly_planning.create_yearly_planning(planning).await
+    }
+
+    pub async fn update_yearly_planning(&self, dto: UpdateYearlyPlanningDto) -> DomainResult<()> {
+        // Get existing planning to preserve creation dates and IDs
+        let existing_planning = self.deps.yearly_planning.get_yearly_planning(dto.year).await?
+            .ok_or_else(|| DomainError::NotFound)?;
+        
+        let updated_planning = dto.to_domain(&existing_planning);
+        self.deps.yearly_planning.update_yearly_planning(updated_planning).await
+    }
+
+    pub async fn get_yearly_planning(&self, year: i32) -> DomainResult<Option<YearlyPlanning>> {
+        self.deps.yearly_planning.get_yearly_planning(year).await
+    }
+
+    pub async fn delete_yearly_planning(&self, year: i32) -> DomainResult<()> {
+        self.deps.yearly_planning.delete_yearly_planning(year).await
+    }
+
+    pub async fn list_yearly_plannings(&self) -> DomainResult<Vec<YearlyPlanning>> {
+        self.deps.yearly_planning.list_yearly_plannings().await
+    }
+
+    pub async fn update_month_planning(&self, year: i32, month: u32, dto: UpdateMonthPlanningDto) -> DomainResult<()> {
+        let existing_month = self.deps.yearly_planning.get_month_planning(year, month).await?
+            .ok_or_else(|| DomainError::NotFound)?;
+        
+        let updated_month = MonthPlanning {
+            id: existing_month.id,
+            year,
+            month,
+            max_working_days: dto.max_working_days,
+            holidays_taken: dto.holidays_taken,
+            public_holidays: dto.public_holidays,
+            working_days: dto.working_days,
+            estimated_revenue_cents: dto.estimated_revenue_cents,
+            created_at: existing_month.created_at,
+            updated_at: chrono::Utc::now().naive_utc(),
+        };
+        
+        self.deps.yearly_planning.update_month_planning(updated_month).await
     }
 }
