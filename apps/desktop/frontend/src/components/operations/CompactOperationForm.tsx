@@ -34,7 +34,6 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   const [operationType, setOperationType] = useState<'sale' | 'purchase'>('sale')
   const [isPrestation, setIsPrestation] = useState(true) // Pour les achats seulement
   const [dateFacture, setDateFacture] = useState('')
-  const [dateEncaissement, setDateEncaissement] = useState('')
   const [datePaiement, setDatePaiement] = useState('')
   const [montantHt, setMontantHt] = useState('')
   const [montantTva, setMontantTva] = useState('')
@@ -56,15 +55,19 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   const montantHtNum = parseFloat(montantHt) || 0
   const montantTvaNum = parseFloat(montantTva) || 0
   const montantTtc = operationType === 'purchase' 
-    ? montantHtNum + montantTvaNum
+    ? (montantHtNum > 0 ? montantHtNum + montantTvaNum : montantTvaNum) // Si pas de HT, TTC = TVA seule
     : montantHtNum * 1.2 // TOUJOURS 20% TVA pour les ventes
 
-  // Validation du bouton - Les ventes sont toujours des prestations, donc toujours besoin de date d'encaissement
-  const isButtonDisabled = isSubmitting || !dateFacture || !montantHt || (operationType === 'sale' && !dateEncaissement)
+  // Validation du bouton 
+  const isButtonDisabled = isSubmitting || !dateFacture || 
+    (operationType === 'sale' && (!montantHt || !datePaiement)) || // Ventes : HT et date paiement obligatoires
+    (operationType === 'purchase' && !montantTva) || // Achats : TVA obligatoire (HT optionnel)
+    (operationType === 'purchase' && isPrestation && !datePaiement) // Achats prestations : besoin de date paiement
   
   // Debug simple pour cas problématiques  
   const shouldBeEnabled = dateFacture && montantHt && !isSubmitting && 
-    !(operationType === 'sale' && !dateEncaissement)
+    !(operationType === 'sale' && !datePaiement) &&
+    !(operationType === 'purchase' && isPrestation && !datePaiement)
   
   if (shouldBeEnabled && isButtonDisabled) {
     console.log('🐛 Bouton devrait être activé mais ne l\'est pas:', {
@@ -72,16 +75,18 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       montantHt: !!montantHt,
       isSubmitting,
       operationType,
-      dateEncaissement: !!dateEncaissement
+      isPrestation,
+      datePaiement: !!datePaiement
     })
   }
 
-  // Auto-calcul TVA pour ventes
+  // Auto-calcul TVA pour ventes SEULEMENT (pas pour les achats!)
   useEffect(() => {
     if (operationType === 'sale' && montantHt) {
-      const tvaRate = 0.2 // TOUJOURS 20% pour toutes les ventes (prestations ET biens)
+      const tvaRate = 0.2 // TOUJOURS 20% pour toutes les ventes
       setMontantTva((montantHtNum * tvaRate).toFixed(2))
     }
+    // Pour les achats, on garde le montant TVA saisi manuellement
   }, [montantHt, operationType, montantHtNum])
 
 
@@ -239,15 +244,29 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    // Validation des champs requis
-    if (!dateFacture || !montantHt) {
-      console.log('❌ Champs manquants:', { dateFacture, montantHt })
+    // Validation des champs requis selon le type
+    if (!dateFacture) {
+      console.log('❌ Date facture manquante')
       return
     }
     
-    // Validation date encaissement pour ventes (toujours prestations)
-    if (operationType === 'sale' && !dateEncaissement) {
-      console.log('❌ Date encaissement manquante pour vente (prestation)')
+    if (operationType === 'sale' && !montantHt) {
+      console.log('❌ Montant HT manquant pour vente')
+      return
+    }
+    
+    if (operationType === 'purchase' && !montantTva) {
+      console.log('❌ Montant TVA manquant pour achat')
+      return
+    }
+    
+    // Validation date paiement
+    if (operationType === 'sale' && !datePaiement) {
+      console.log('❌ Date paiement manquante pour vente')
+      return
+    }
+    if (operationType === 'purchase' && isPrestation && !datePaiement) {
+      console.log('❌ Date paiement manquante pour achat prestation')
       return
     }
 
@@ -255,13 +274,28 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
     try {
       console.log('🚀 Création de l\'opération via Tauri...')
       
+      // Convertir les dates au format ISO
+      const invoiceDateISO = convertToISODate(dateFacture)
+      const paymentDateISO = convertToISODate(datePaiement)
+      
+      if (!invoiceDateISO) {
+        setSubmitError('❌ Date facture invalide (format: DD/MM/YYYY)')
+        return
+      }
+      
+      // Validation date paiement pour les cas obligatoires
+      if ((operationType === 'sale' || (operationType === 'purchase' && isPrestation)) && !paymentDateISO) {
+        setSubmitError('❌ Date paiement invalide (format: DD/MM/YYYY)')
+        return
+      }
+      
       // Préparer les données pour la commande Tauri selon CreateOperationDto
       const operationDto = {
-        invoice_date: dateFacture,
-        payment_date: operationType === 'sale' ? dateEncaissement : (operationType === 'purchase' ? (datePaiement || dateFacture) : null),
+        invoice_date: invoiceDateISO,
+        payment_date: paymentDateISO,
         operation_type: operationType,
-        amount_ht_cents: Math.round(montantHtNum * 100),
-        vat_rate: parseFloat(montantTva) / parseFloat(montantHt) * 100,
+        amount_ht_cents: operationType === 'purchase' && !montantHt ? 0 : Math.round(montantHtNum * 100), // HT optionnel pour achats
+        vat_rate: operationType === 'purchase' && montantHt ? (parseFloat(montantTva) / parseFloat(montantHt) * 100) : 20, // Défaut 20% si pas de HT
         vat_on_payments: operationType === 'sale' ? true : (operationType === 'purchase' ? isPrestation : false),
         label: label || `${operationType === 'sale' ? 'Vente' : 'Achat'} ${dateFacture}`,
         receipt_url: uploadedFile?.url || undefined
@@ -278,7 +312,6 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       
       // Reset du formulaire
       setDateFacture('')
-      setDateEncaissement('')
       setDatePaiement('')
       setMontantHt('')
       setMontantTva('')
@@ -311,6 +344,51 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       e.preventDefault()
       handleSubmit(e as any)
     }
+  }
+
+  // Convertir DD/MM/YYYY vers YYYY-MM-DD (format ISO)
+  const convertToISODate = (dateStr: string): string | null => {
+    if (!dateStr) return null
+    
+    const parts = dateStr.split('/')
+    if (parts.length !== 3) return null
+    
+    const day = parts[0].padStart(2, '0')
+    const month = parts[1].padStart(2, '0')
+    const year = parts[2]
+    
+    // Validation basique
+    if (day.length !== 2 || month.length !== 2 || year.length !== 4) return null
+    if (parseInt(day) < 1 || parseInt(day) > 31) return null
+    if (parseInt(month) < 1 || parseInt(month) > 12) return null
+    if (parseInt(year) < 2000 || parseInt(year) > 2030) return null
+    
+    return `${year}-${month}-${day}`
+  }
+
+  // Formatage automatique pour la saisie de dates
+  const formatDateInput = (value: string): string => {
+    // Supprimer tout ce qui n'est pas un chiffre
+    const nums = value.replace(/\D/g, '')
+    
+    // Formatter automatiquement avec /
+    if (nums.length <= 2) {
+      return nums
+    } else if (nums.length <= 4) {
+      return `${nums.slice(0, 2)}/${nums.slice(2)}`
+    } else {
+      return `${nums.slice(0, 2)}/${nums.slice(2, 4)}/${nums.slice(4, 8)}`
+    }
+  }
+
+  const handleDateFactureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatDateInput(e.target.value)
+    setDateFacture(formatted)
+  }
+
+  const handleDatePaiementChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatDateInput(e.target.value)
+    setDatePaiement(formatted)
   }
 
 
@@ -395,61 +473,67 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
                 Date facture <span className="text-red-400">*</span>
               </label>
               <input
-                type="date"
+                type="text"
                 value={dateFacture}
-                onChange={(e) => setDateFacture(e.target.value)}
-                className="form-input w-40"
+                onChange={handleDateFactureChange}
+                className="form-input w-32 font-mono text-sm"
+                placeholder="DD/MM/YYYY"
+                maxLength={10}
                 required
               />
             </div>
 
-            {operationType === 'sale' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium text-slate-400">
-                  Encaissement <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={dateEncaissement}
-                  onChange={(e) => setDateEncaissement(e.target.value)}
-                  className="form-input w-40"
-                  required
-                />
-              </div>
-            )}
-
-            {operationType === 'purchase' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium text-slate-400">Date paiement</label>
-                <input
-                  type="date"
-                  value={datePaiement}
-                  onChange={(e) => setDatePaiement(e.target.value)}
-                  className="form-input w-40"
-                />
-              </div>
-            )}
+            {/* Date paiement/encaissement unifiée */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium text-slate-400">
+                {operationType === 'sale' ? 'Encaissement' : 'Date paiement'}
+                {(operationType === 'sale' || (operationType === 'purchase' && isPrestation)) && (
+                  <span className="text-red-400"> *</span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={datePaiement}
+                onChange={handleDatePaiementChange}
+                className={`form-input w-32 font-mono text-sm ${
+                  operationType === 'purchase' && !isPrestation ? 'border-slate-600 text-slate-400' : ''
+                }`}
+                placeholder="DD/MM/YYYY"
+                maxLength={10}
+                required={operationType === 'sale' || (operationType === 'purchase' && isPrestation)}
+                title={
+                  operationType === 'sale' 
+                    ? 'Date d\'encaissement (obligatoire)' 
+                    : operationType === 'purchase' && isPrestation
+                    ? 'Date de paiement (obligatoire pour prestations)'
+                    : 'Date de paiement (optionnel pour biens)'
+                }
+              />
+            </div>
           </div>
 
           {/* Ligne 2: Montants et bouton */}
           <div className="flex flex-wrap items-end gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-xs font-medium text-slate-400">
-                HT € <span className="text-red-400">*</span>
+                HT € {operationType === 'sale' && <span className="text-red-400">*</span>}
               </label>
               <input
                 type="number"
                 step="0.01"
                 value={montantHt}
                 onChange={(e) => setMontantHt(e.target.value)}
-                className="form-input font-mono text-sm w-24"
-                placeholder="0.00"
-                required
+                className={`form-input font-mono text-sm w-24 ${operationType === 'purchase' ? 'border-slate-600' : ''}`}
+                placeholder={operationType === 'purchase' ? 'Optionnel' : '0.00'}
+                required={operationType === 'sale'}
+                title={operationType === 'purchase' ? 'Optionnel pour les achats' : 'Obligatoire pour les ventes'}
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-medium text-slate-400">TVA €</label>
+              <label className="text-xs font-medium text-slate-400">
+                TVA € {operationType === 'purchase' && <span className="text-red-400">*</span>}
+              </label>
               <input
                 type="number"
                 step="0.01"
@@ -458,6 +542,8 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
                 className={`form-input font-mono text-sm w-24 ${operationType === 'sale' ? 'text-orange-400 bg-slate-800/50' : ''}`}
                 placeholder="0.00"
                 readOnly={operationType === 'sale'}
+                required={operationType === 'purchase'}
+                title={operationType === 'sale' ? 'Calculé automatiquement (20%)' : 'Obligatoire pour les achats'}
               />
             </div>
 

@@ -5,7 +5,7 @@ import { useDeclarationPeriod } from '../../hooks/useDeclarationPeriod'
 import { MonthSelector } from '../ui/MonthSelector'
 import type { Operation } from '../../types'
 
-// Types pour les calculs de déclaration
+// Types pour les calculs de déclaration - utilise maintenant les commandes V2 du backend
 interface DeclarationCalculation {
   periodKey: string
   operations: Operation[]
@@ -69,9 +69,9 @@ export const DeclarationPage: React.FC = () => {
   const canValidate = calculation && !currentStatus?.status || currentStatus?.status === 'draft'
   const isValidated = currentStatus?.status === 'validated' || currentStatus?.status === 'submitted'
 
-  // Charger les opérations au changement de période
+  // Charger les données de déclaration au changement de période
   useEffect(() => {
-    const loadOperations = async () => {
+    const loadDeclarationData = async () => {
       if (!selectedPeriod.periodKey) return
       
       // Optimisation: Ne pas charger pour les périodes trop loin dans le futur
@@ -83,6 +83,8 @@ export const DeclarationPage: React.FC = () => {
       if (periodDate > twoMonthsFromNow) {
         console.log('⏩ Période trop future, pas de chargement:', selectedPeriod.periodKey)
         setOperations([])
+        setCalculation(null)
+        setCases(null)
         setIsLoading(false)
         return
       }
@@ -90,154 +92,63 @@ export const DeclarationPage: React.FC = () => {
       try {
         setIsLoading(true)
         setError(null)
-        console.log('🔍 Chargement des opérations pour période:', selectedPeriod.periodKey)
-        const loadedOperations = await TauriClient.getOperations(selectedPeriod.periodKey)
-        console.log('✅ Opérations chargées:', loadedOperations.length, 'opérations')
+        console.log('🔍 Chargement des données de déclaration pour période:', selectedPeriod.periodKey)
+        
+        // Charger toutes les données en parallèle avec les nouvelles commandes V2
+        const [loadedOperations, vatReport, urssafReport] = await Promise.all([
+          TauriClient.getOperations(selectedPeriod.periodKey),
+          TauriClient.getVatCalculationV2(selectedPeriod.periodKey),
+          TauriClient.getUrssafCalculationV2(selectedPeriod.periodKey)
+        ])
+        
+        console.log('✅ Données chargées:', {
+          operations: loadedOperations.length,
+          vatCollected: vatReport.collected_cents,
+          vatDeductible: vatReport.deductible_cents,
+          vatDue: vatReport.due_cents,
+          caEncaisse: urssafReport.ca_encaisse_cents,
+          urssafDue: urssafReport.due_cents
+        })
+        
         setOperations(loadedOperations)
+        
+        // Créer le calcul à partir des rapports V2
+        const ventes = loadedOperations.filter(op => op.operation_type === 'sale')
+        const achats = loadedOperations.filter(op => op.operation_type === 'purchase')
+        
+        const calc: DeclarationCalculation = {
+          periodKey: selectedPeriod.periodKey,
+          operations: loadedOperations,
+          ventes,
+          achats,
+          tvaCollectee: vatReport.collected_cents,
+          tvaDeductible: vatReport.deductible_cents,
+          tvaNetteAPayer: vatReport.due_cents,
+          caEncaisse: urssafReport.ca_encaisse_cents,
+          urssafDue: urssafReport.due_cents
+        }
+        
+        setCalculation(calc)
+        setCases(generateDeclarationCases(calc))
+        
       } catch (err) {
-        console.error('❌ Erreur chargement opérations:', err)
+        console.error('❌ Erreur chargement données déclaration:', err)
         setError(err instanceof Error ? err.message : 'Erreur de chargement')
         setOperations([])
+        setCalculation(null)
+        setCases(null)
       } finally {
         setIsLoading(false)
       }
     }
 
-    loadOperations()
+    loadDeclarationData()
   }, [selectedPeriod.periodKey])
 
-  // Calculer la déclaration quand les opérations changent
-  useEffect(() => {
-    if (operations && operations.length > 0) {
-      const calc = calculateDeclaration(selectedPeriod.periodKey, operations)
-      setCalculation(calc)
-      setCases(generateDeclarationCases(calc))
-    } else {
-      setCalculation(null)
-      setCases(null)
-    }
-  }, [operations, selectedPeriod.periodKey])
+  // Note: Les calculs sont maintenant faits côté backend avec les commandes V2
+  // qui appliquent correctement les règles métier françaises (TVA sur encaissements, etc.)
 
-  const calculateDeclaration = (periodKey: string, operations: Operation[]): DeclarationCalculation => {
-    const ventes = operations.filter(op => op.operation_type === 'sale')
-    const achats = operations.filter(op => op.operation_type === 'purchase')
-    
-    console.log('📊 Calcul déclaration pour', periodKey)
-    console.log('  - Ventes:', ventes.length)
-    console.log('  - Achats:', achats.length)
-    
-    // TVA collectée et CA encaissé (basé sur les paiements reçus dans la période)
-    let tvaCollectee = 0
-    let caEncaisse = 0 // Pour URSSAF - basé sur les encaissements
-    
-    ventes.forEach(vente => {
-      if (!vente) {
-        console.log('  ⚠️ Vente undefined, ignorée')
-        return
-      }
-      
-      let includeInPeriod = false
-      
-      console.log('  Vente:', {
-        id: vente.id,
-        invoice_date: vente.invoice_date,
-        payment_date: vente.payment_date,
-        amount_ht_cents: vente.amount_ht_cents,
-        vat_on_payments: vente.vat_on_payments
-      })
-      
-      // Pour les freelancers français : TVA sur encaissements est la règle
-      // Si pas de date d'encaissement, on utilise la date de l'opération
-      if (vente.payment_date) {
-        // Vérifier si la date d'encaissement est dans la période
-        if (vente.payment_date.startsWith(periodKey)) {
-          includeInPeriod = true
-          console.log('    ✓ Incluse (encaissement dans période)')
-        }
-      } else {
-        // Si pas de date d'encaissement, on vérifie la date de facturation
-        // C'est le cas pour les factures pas encore payées mais qu'on veut déclarer
-        if (vente.invoice_date && vente.invoice_date.startsWith(periodKey)) {
-          includeInPeriod = true
-          console.log('    ✓ Incluse (date facturation dans période, pas d\'encaissement)')
-        }
-      }
-      
-      if (includeInPeriod) {
-        tvaCollectee += vente.vat_amount_cents || 0
-        caEncaisse += vente.amount_ht_cents || 0
-        console.log('    → TVA:', vente.vat_amount_cents, 'CA:', vente.amount_ht_cents)
-      }
-    })
-    
-    // TVA déductible (sur achats payés dans la période)
-    let tvaDeductible = 0
-    
-    achats.forEach(achat => {
-      if (!achat) {
-        console.log('  ⚠️ Achat undefined, ignoré')
-        return
-      }
-      
-      // Pour les achats, on regarde généralement la date de paiement
-      let includeInPeriod = false
-      
-      console.log('  Achat:', {
-        id: achat.id,
-        invoice_date: achat.invoice_date,
-        payment_date: achat.payment_date,
-        amount_ttc_cents: achat.amount_ttc_cents,
-        vat_amount_cents: achat.vat_amount_cents
-      })
-      
-      if (achat.payment_date) {
-        // Si on a une date de paiement, l'utiliser
-        if (achat.payment_date.startsWith(periodKey)) {
-          includeInPeriod = true
-          console.log('    ✓ Inclus (paiement dans période)')
-        }
-      } else if (achat.invoice_date && achat.invoice_date.startsWith(periodKey)) {
-        // Sinon utiliser la date de facturation
-        includeInPeriod = true
-        console.log('    ✓ Inclus (date facturation dans période)')
-      }
-      
-      if (includeInPeriod) {
-        tvaDeductible += achat.vat_amount_cents || 0
-        console.log('    → TVA déductible:', achat.vat_amount_cents)
-      }
-    })
-    
-    // TVA nette à payer
-    const tvaNetteAPayer = Math.max(0, tvaCollectee - tvaDeductible)
-    
-    // URSSAF (basé sur le CA encaissé dans la période)
-    // Pour les prestations de services BNC (freelancers)
-    const prestationsBNC = Math.round(caEncaisse * 0.246) // 24.60%
-    const formationProf = Math.round(caEncaisse * 0.003) // 0.30%
-    const taxeCMAPrestation = Math.round(caEncaisse * 0.0048) // 0.48%
-    const urssafDue = prestationsBNC + formationProf + taxeCMAPrestation
-    
-    console.log('📈 Résultat calcul:', {
-      caEncaisse,
-      tvaCollectee,
-      tvaDeductible,
-      tvaNetteAPayer,
-      urssafDue
-    })
-    
-    return {
-      periodKey,
-      operations,
-      ventes,
-      achats,
-      tvaCollectee,
-      tvaDeductible,
-      tvaNetteAPayer,
-      caEncaisse,
-      urssafDue
-    }
-  }
+  // Ancienne fonction de calcul remplacée par les commandes backend V2
 
   const generateDeclarationCases = (calc: DeclarationCalculation): DeclarationCases => {
     const baseHTTotal = Math.round(calc.caEncaisse / 100) // en euros

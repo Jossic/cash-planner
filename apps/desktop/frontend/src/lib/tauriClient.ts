@@ -13,7 +13,10 @@ import type {
   Operation,
   CreateOperationDto,
   VatCalculation,
-  UrssafCalculation
+  UrssafCalculation,
+  // Types V2
+  VatReportV2,
+  UrssafReportV2
 } from '../types'
 
 /**
@@ -136,12 +139,23 @@ export class TauriClient {
     return invoke('cmd_delete_operation', { id })
   }
 
-  // VAT calculation with operations
+  // VAT calculation with operations - V2 (uses proper French business rules)
+  static async getVatCalculationV2(period: string): Promise<VatReportV2> {
+    const [year, month] = period.split('-').map(Number)
+    return invoke('cmd_prepare_vat_v2', { year, month })
+  }
+
+  // URSSAF calculation with operations - V2 (uses proper French business rules) 
+  static async getUrssafCalculationV2(period: string): Promise<UrssafReportV2> {
+    const [year, month] = period.split('-').map(Number)
+    return invoke('cmd_prepare_urssaf_v2', { year, month })
+  }
+
+  // Legacy methods - kept for backward compatibility
   static async getVatCalculationForOperations(period: string): Promise<VatCalculation> {
     return invoke('cmd_calculate_vat_operations', { period })
   }
 
-  // URSSAF calculation with operations
   static async getUrssafCalculationForOperations(period: string): Promise<UrssafCalculation> {
     return invoke('cmd_calculate_urssaf_operations', { period })
   }

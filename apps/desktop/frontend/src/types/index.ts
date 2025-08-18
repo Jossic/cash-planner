@@ -392,6 +392,21 @@ export interface ExpenseFormData {
   is_service: boolean
 }
 
+// V2 Types - Simple types that match the Rust backend structures
+export interface VatReportV2 {
+  month: { year: number; month: number }
+  collected_cents: number
+  deductible_cents: number
+  due_cents: number
+}
+
+export interface UrssafReportV2 {
+  month: { year: number; month: number }
+  ca_encaisse_cents: number
+  rate_ppm: number
+  due_cents: number
+}
+
 // Legacy types for backward compatibility (to be gradually removed)
 export type MonthId = string
 export type ChartDataPoint = CashFlowDataPoint
