@@ -279,25 +279,44 @@ const YearlyPlanningPage: React.FC = () => {
                 encaissedRevenueHT = previousDecemberRevenue
             }
             
-            // CA TTC réellement encaissé = CA HT + TVA
-            const encaissedRevenueTTC = encaissedRevenueHT * (1 + VAT_RATE)
+            // CA HT pour calculs TVA/URSSAF = CA encaissé le mois précédent (donc facturé 2 mois avant)
+            let taxableRevenueHT = 0
+            if (index > 1) {
+                // Mois 3-12: prendre le CA estimé HT de 2 mois avant
+                taxableRevenueHT = planningData.months[index - 2].estimated_revenue_cents / 100
+            } else if (index === 1) {
+                // Février: prendre décembre N-1
+                taxableRevenueHT = previousDecemberRevenue
+            } else {
+                // Janvier: pas de données (besoin novembre N-1)
+                taxableRevenueHT = 0
+            }
             
-            // Calculs des charges sur le CA HT encaissé
-            const vatAmount = encaissedRevenueHT * VAT_RATE // TVA = 20% du HT
-            const urssafAmount = encaissedRevenueHT * URSSAF_RATE // URSSAF = 26.1% du HT
-            const maltCommission = encaissedRevenueHT * 0.05 // Commission Malt = 5% du HT
+            // CA TTC théorique = CA HT + TVA
+            const encaissedRevenueTTCTheorique = encaissedRevenueHT * (1 + VAT_RATE)
             
-            const totalTaxes = vatAmount + urssafAmount + maltCommission
-            const availableAmount = encaissedRevenueTTC - totalTaxes // CA disponible = TTC encaissé - toutes charges
+            // Commission Malt prélevée AVANT virement (sur le HT puis avec TVA)
+            const maltCommissionHT = encaissedRevenueHT * 0.05 // Commission Malt HT = 5% du HT
+            const maltCommissionTTC = maltCommissionHT * (1 + VAT_RATE) // Commission Malt TTC
+            
+            // CA réellement encaissé sur le compte = TTC théorique - Commission Malt TTC
+            const encaissedRevenueNet = encaissedRevenueTTCTheorique - maltCommissionTTC
+            
+            // Calculs des charges sur le CA HT encaissé le mois précédent (facturé 2 mois avant)
+            const vatAmount = taxableRevenueHT * VAT_RATE // TVA = 20% du HT encaissé N-1
+            const urssafAmount = taxableRevenueHT * URSSAF_RATE // URSSAF = 26.1% du HT encaissé N-1
+            
+            const totalTaxes = vatAmount + urssafAmount // Total charges = TVA + URSSAF (Malt déjà déduit)
+            const availableAmount = encaissedRevenueNet - totalTaxes // CA disponible = Net encaissé - charges
             
             return {
                 monthIndex: index,
                 estimatedRevenue, // CA facturé ce mois
-                encaissedRevenue: encaissedRevenueTTC, // CA TTC reçu ce mois (facturé N-1)
-                vatAmount, // TVA sur CA encaissé
-                urssafAmount, // URSSAF sur CA encaissé
-                maltCommission, // Commission Malt sur CA encaissé
-                totalTaxes, // Total charges (TVA + URSSAF + Malt)
+                encaissedRevenue: encaissedRevenueNet, // CA net reçu ce mois (TTC - Com. Malt TTC)
+                vatAmount, // TVA sur CA encaissé N-1 (facturé N-2)
+                urssafAmount, // URSSAF sur CA encaissé N-1 (facturé N-2)
+                maltCommission: maltCommissionTTC, // Commission Malt TTC prélevée par Malt
+                totalTaxes, // Total charges (TVA + URSSAF)
                 availableAmount, // CA disponible après charges
             }
         })
@@ -650,10 +669,25 @@ const YearlyPlanningPage: React.FC = () => {
                                 </td>
                             </tr>
 
-                            {/* Row 6: CA Encaissé (décalé N-1) */}
+                            {/* Row 6: Commission Malt */}
+                            <tr>
+                                <td className="px-3 py-2 text-sm font-medium text-cyan-400 bg-slate-850">
+                                    Com. Malt TTC (€)
+                                </td>
+                                {calculations.monthlyTaxCalculations.map((calc) => (
+                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm text-cyan-400">
+                                        {calc.maltCommission === 0 ? '-' : Math.round(calc.maltCommission).toLocaleString('fr-FR')}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 text-center text-sm font-bold text-cyan-400 bg-slate-850">
+                                    {Math.round(calculations.totalMaltCommission).toLocaleString('fr-FR')}
+                                </td>
+                            </tr>
+
+                            {/* Row 7: CA Encaissé (décalé N-1) */}
                             <tr className="bg-slate-900/50 border-t border-slate-600">
                                 <td className="px-3 py-2 text-sm font-medium text-purple-400 bg-slate-850">
-                                    CA encaissé TTC (€)
+                                    CA encaissé net (€)
                                 </td>
                                 {calculations.monthlyTaxCalculations.map((calc) => (
                                     <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm font-bold text-purple-400">
@@ -680,7 +714,7 @@ const YearlyPlanningPage: React.FC = () => {
                                 </td>
                             </tr>
 
-                            {/* Row 8: URSSAF */}
+                            {/* Row 9: URSSAF */}
                             <tr className="bg-slate-900/50">
                                 <td className="px-3 py-2 text-sm font-medium text-orange-400 bg-slate-850">
                                     URSSAF (€)
@@ -695,25 +729,10 @@ const YearlyPlanningPage: React.FC = () => {
                                 </td>
                             </tr>
 
-                            {/* Row 9: Commission Malt */}
-                            <tr>
-                                <td className="px-3 py-2 text-sm font-medium text-cyan-400 bg-slate-850">
-                                    Com. Malt HT (€)
-                                </td>
-                                {calculations.monthlyTaxCalculations.map((calc) => (
-                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm text-cyan-400">
-                                        {calc.maltCommission === 0 ? '-' : Math.round(calc.maltCommission).toLocaleString('fr-FR')}
-                                    </td>
-                                ))}
-                                <td className="px-3 py-2 text-center text-sm font-bold text-cyan-400 bg-slate-850">
-                                    {Math.round(calculations.totalMaltCommission).toLocaleString('fr-FR')}
-                                </td>
-                            </tr>
-
                             {/* Row 10: Total Charges */}
                             <tr>
                                 <td className="px-3 py-2 text-sm font-medium text-red-400 bg-slate-850">
-                                    Total charges (€)
+                                    Total charges à payer (€)
                                 </td>
                                 {calculations.monthlyTaxCalculations.map((calc) => (
                                     <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm font-bold text-red-400">
@@ -728,7 +747,7 @@ const YearlyPlanningPage: React.FC = () => {
                             {/* Row 11: CA Disponible */}
                             <tr className="bg-slate-900/50 border-t-2 border-emerald-600">
                                 <td className="px-3 py-2 text-sm font-medium text-emerald-400 bg-slate-850">
-                                    CA disponible (€)
+                                    CA disponible (€) (5 mois + 1)
                                 </td>
                                 {calculations.monthlyTaxCalculations.map((calc) => (
                                     <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm font-bold text-emerald-400">
@@ -746,11 +765,11 @@ const YearlyPlanningPage: React.FC = () => {
                     {/* Note explicative */}
                     <div className="px-4 py-3 border-t border-slate-800 bg-slate-900/50">
                         <p className="text-xs text-slate-400">
-                            <strong>CA encaissé TTC</strong> : CA HT facturé le mois précédent + TVA (décalage d'encaissement). 
-                            <strong>CA disponible</strong> : CA encaissé TTC - TVA - URSSAF - Com. Malt (toutes charges calculées sur le HT du CA encaissé).
+                            <strong>CA encaissé net</strong> : CA reçu sur compte = (CA HT + TVA) - Commission Malt 5%. 
+                            <strong>CA disponible</strong> : CA net encaissé - TVA - URSSAF (TVA/URSSAF calculées sur le même CA HT encaissé).
                         </p>
                         <p className="text-xs text-slate-500 mt-1">
-                            Taux appliqués sur CA HT encaissé : TVA 20%, URSSAF 26.1%, Com. Malt 5% • Janvier : données de décembre N-1 si disponibles
+                            Décalages : CA encaissé = facturé N-1 • TVA/URSSAF = sur CA encaissé N-1 (donc facturé N-2) • Commission Malt prélevée AVANT virement
                         </p>
                     </div>
                 </div>
