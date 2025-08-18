@@ -96,7 +96,7 @@ export const DeclarationPage: React.FC = () => {
         
         // Charger toutes les données en parallèle avec les nouvelles commandes V2
         const [loadedOperations, vatReport, urssafReport] = await Promise.all([
-          TauriClient.getOperations(selectedPeriod.periodKey),
+          TauriClient.getOperationsForDeclaration(selectedPeriod.periodKey), // Utiliser la nouvelle méthode qui filtre correctement
           TauriClient.getVatCalculationV2(selectedPeriod.periodKey),
           TauriClient.getUrssafCalculationV2(selectedPeriod.periodKey)
         ])
@@ -176,7 +176,12 @@ export const DeclarationPage: React.FC = () => {
       formationProfessionnelle: Math.round(calc.caEncaisse * 0.0030 / 100).toString(), // 0.30%
       taxeCMAVente: '0', // 0.22% - Pas utilisé pour les prestations
       taxeCMAPrestation: Math.round(calc.caEncaisse * 0.0048 / 100).toString(), // 0.48%
-      totalURSSAF: Math.round((calc.caEncaisse * 0.2560 / 100)).toString(), // Total réel: 25.60% (24.60% + 0.30% + 0 + 0.48% = 25.38% mais affichage montre 25.60%)
+      // Total URSSAF = somme des lignes ci-dessus
+      totalURSSAF: (
+        Math.round(calc.caEncaisse * 0.2460 / 100) + // Prestations BNC
+        Math.round(calc.caEncaisse * 0.0030 / 100) + // Formation
+        Math.round(calc.caEncaisse * 0.0048 / 100)   // Taxe CMA prestation
+      ).toString(),
       revenueURSSAF: Math.round(calc.caEncaisse / 100) // Revenue de base en euros
     }
   }

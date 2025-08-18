@@ -127,6 +127,34 @@ export class TauriClient {
     return rawOperations.map(op => TauriClient.transformOperation(op))
   }
 
+  // Récupérer les opérations pour déclaration (TVA sur encaissements)
+  static async getOperationsForDeclaration(period: string): Promise<Operation[]> {
+    const [year, month] = period.split('-').map(Number)
+    
+    // Récupérer les opérations avec payment_date dans le mois (prestations)
+    const paymentOps = await invoke<any[]>('cmd_list_operations_by_payment_month', { year, month })
+    
+    // Récupérer toutes les opérations du mois pour filtrer les biens facturés
+    const allOps = await invoke<any[]>('cmd_list_operations', { month: year, m: month })
+    
+    // Filtrer les achats de biens (vat_on_payments = false) facturés dans le mois
+    const goodsPurchases = allOps.filter(op => 
+      op.type === 'purchase' && 
+      !op.vat_on_payments &&
+      op.invoice_date.startsWith(`${year}-${String(month).padStart(2, '0')}`)
+    )
+    
+    // Combiner les deux listes en évitant les doublons
+    const combinedOps = [...paymentOps]
+    goodsPurchases.forEach(op => {
+      if (!paymentOps.find(p => p.id === op.id)) {
+        combinedOps.push(op)
+      }
+    })
+    
+    return combinedOps.map(op => TauriClient.transformOperation(op))
+  }
+
   static async createOperation(dto: CreateOperationDto): Promise<Operation> {
     const rawOperation = await invoke('cmd_create_operation', { dto })
     return TauriClient.transformOperation(rawOperation)
