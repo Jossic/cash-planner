@@ -66,12 +66,22 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
   // Fonction de suppression
   const deleteOperation = async (operationId: string) => {
     try {
-      console.log('🗑️ Suppression opération:', operationId)
-      await TauriClient.deleteOperation(operationId)
+      console.log('🗑️ [deleteOperation] Début suppression opération:', operationId)
+      console.log('🗑️ [deleteOperation] Type de l\'ID:', typeof operationId, operationId)
+      
+      const result = await TauriClient.deleteOperation(operationId)
+      console.log('🗑️ [deleteOperation] Résultat de TauriClient.deleteOperation:', result)
+      
+      console.log('🗑️ [deleteOperation] Rechargement de la liste...')
       await loadOperations() // Recharger après suppression
-      console.log('✅ Opération supprimée:', operationId)
+      console.log('✅ [deleteOperation] Opération supprimée et liste rechargée:', operationId)
     } catch (err) {
-      console.error('❌ Erreur suppression opération:', err)
+      console.error('❌ [deleteOperation] Erreur suppression opération:', err)
+      console.error('❌ [deleteOperation] Détails de l\'erreur:', {
+        message: err instanceof Error ? err.message : 'Unknown',
+        name: err instanceof Error ? err.name : 'Unknown',
+        stack: err instanceof Error ? err.stack : 'No stack'
+      })
       throw err
     }
   }
@@ -149,9 +159,16 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
   const handleDelete = async (operationId: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cette opération ?')) {
       try {
+        console.log('🗑️ Début suppression opération:', operationId)
         await deleteOperation(operationId)
+        console.log('✅ Suppression réussie pour opération:', operationId)
+        
+        // Forcer le rechargement de la liste
+        window.dispatchEvent(new Event('operations-updated'))
       } catch (err) {
-        alert('Erreur lors de la suppression')
+        console.error('❌ Erreur suppression opération:', err)
+        const errorMessage = err instanceof Error ? err.message : 'Erreur inconnue'
+        alert(`Erreur lors de la suppression: ${errorMessage}`)
       }
     }
   }
@@ -358,14 +375,16 @@ export const OperationsList: React.FC<OperationsListProps> = ({ showFilters = tr
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(operation.id)}
+                        <button
+                          onClick={() => {
+                            console.log('🔥 BOUTON SUPPRESSION CLIQUÉ!', operation.id)
+                            handleDelete(operation.id)
+                          }}
                           className="p-1 text-red-400 hover:text-red-300"
+                          title="Supprimer l'opération"
                         >
                           <Trash2 className="h-4 w-4" />
-                        </Button>
+                        </button>
                       </div>
                     </td>
                   </tr>

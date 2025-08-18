@@ -32,7 +32,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   onOperationAdded 
 }) => {
   const [operationType, setOperationType] = useState<'sale' | 'purchase'>('sale')
-  const [isPrestation, setIsPrestation] = useState(true)
+  const [isPrestation, setIsPrestation] = useState(true) // Pour les achats seulement
   const [dateFacture, setDateFacture] = useState('')
   const [dateEncaissement, setDateEncaissement] = useState('')
   const [datePaiement, setDatePaiement] = useState('')
@@ -59,12 +59,12 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
     ? montantHtNum + montantTvaNum
     : montantHtNum * 1.2 // TOUJOURS 20% TVA pour les ventes
 
-  // Validation du bouton
-  const isButtonDisabled = isSubmitting || !dateFacture || !montantHt || (operationType === 'sale' && isPrestation && !dateEncaissement)
+  // Validation du bouton - Les ventes sont toujours des prestations, donc toujours besoin de date d'encaissement
+  const isButtonDisabled = isSubmitting || !dateFacture || !montantHt || (operationType === 'sale' && !dateEncaissement)
   
-  // Debug simple pour cas problématiques
+  // Debug simple pour cas problématiques  
   const shouldBeEnabled = dateFacture && montantHt && !isSubmitting && 
-    !(operationType === 'sale' && isPrestation && !dateEncaissement)
+    !(operationType === 'sale' && !dateEncaissement)
   
   if (shouldBeEnabled && isButtonDisabled) {
     console.log('🐛 Bouton devrait être activé mais ne l\'est pas:', {
@@ -72,7 +72,6 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       montantHt: !!montantHt,
       isSubmitting,
       operationType,
-      isPrestation,
       dateEncaissement: !!dateEncaissement
     })
   }
@@ -246,9 +245,9 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       return
     }
     
-    // Validation date encaissement pour prestations
-    if (operationType === 'sale' && isPrestation && !dateEncaissement) {
-      console.log('❌ Date encaissement manquante pour prestation')
+    // Validation date encaissement pour ventes (toujours prestations)
+    if (operationType === 'sale' && !dateEncaissement) {
+      console.log('❌ Date encaissement manquante pour vente (prestation)')
       return
     }
 
@@ -259,11 +258,11 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       // Préparer les données pour la commande Tauri selon CreateOperationDto
       const operationDto = {
         invoice_date: dateFacture,
-        payment_date: operationType === 'sale' && isPrestation ? dateEncaissement : (operationType === 'purchase' ? (datePaiement || dateFacture) : null),
+        payment_date: operationType === 'sale' ? dateEncaissement : (operationType === 'purchase' ? (datePaiement || dateFacture) : null),
         operation_type: operationType,
-        amount_ht: Math.round(montantHtNum * 100),
+        amount_ht_cents: Math.round(montantHtNum * 100),
         vat_rate: parseFloat(montantTva) / parseFloat(montantHt) * 100,
-        vat_on_payments: operationType === 'sale' ? isPrestation : false,
+        vat_on_payments: operationType === 'sale' ? true : (operationType === 'purchase' ? isPrestation : false),
         label: label || `${operationType === 'sale' ? 'Vente' : 'Achat'} ${dateFacture}`,
         receipt_url: uploadedFile?.url || undefined
       }
@@ -377,7 +376,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
               </select>
             </div>
 
-            {operationType === 'sale' && (
+            {operationType === 'purchase' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-slate-400">Nature</label>
                 <select
@@ -404,7 +403,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
               />
             </div>
 
-            {operationType === 'sale' && isPrestation && (
+            {operationType === 'sale' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-slate-400">
                   Encaissement <span className="text-red-400">*</span>

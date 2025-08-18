@@ -747,7 +747,7 @@ const YearlyPlanningPage: React.FC = () => {
                             {/* Row 11: CA Disponible */}
                             <tr className="bg-slate-900/50 border-t-2 border-emerald-600">
                                 <td className="px-3 py-2 text-sm font-medium text-emerald-400 bg-slate-850">
-                                    CA disponible (€) (5 mois + 1)
+                                    CA disponible (€)
                                 </td>
                                 {calculations.monthlyTaxCalculations.map((calc) => (
                                     <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm font-bold text-emerald-400">
@@ -766,7 +766,7 @@ const YearlyPlanningPage: React.FC = () => {
                     <div className="px-4 py-3 border-t border-slate-800 bg-slate-900/50">
                         <p className="text-xs text-slate-400">
                             <strong>CA encaissé net</strong> : CA reçu sur compte = (CA HT + TVA) - Commission Malt 5%. 
-                            <strong>CA disponible</strong> : CA net encaissé - TVA - URSSAF (TVA/URSSAF calculées sur le même CA HT encaissé).
+                            <strong>CA disponible</strong> : CA net encaissé ce mois - TVA - URSSAF (charges calculées sur CA encaissé mois précédent).
                         </p>
                         <p className="text-xs text-slate-500 mt-1">
                             Décalages : CA encaissé = facturé N-1 • TVA/URSSAF = sur CA encaissé N-1 (donc facturé N-2) • Commission Malt prélevée AVANT virement
