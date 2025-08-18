@@ -71,7 +71,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       dateFacture: !!dateFacture,
       montantHt: !!montantHt,
       isSubmitting,
-      sens,
+      operationType,
       isPrestation,
       dateEncaissement: !!dateEncaissement
     })
@@ -86,53 +86,42 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   }, [montantHt, operationType, montantHtNum])
 
 
-  // État pour savoir si Tauri est disponible
-  const [isTauriMode, setIsTauriMode] = useState(false)
-
-  // Configuration Tauri drag & drop
+  // Configuration Tauri drag & drop (seul mode supporté)
   useEffect(() => {
     let unlisten: (() => void) | null = null
 
     const setupTauriDragDrop = async () => {
       try {
-        // Vérifier si on est dans Tauri
-        if (typeof window !== 'undefined' && (window as any).__TAURI_IPC__) {
-          console.log('🔧 Initialisation Tauri drag & drop...')
-          setIsTauriMode(true)
+        console.log('🔧 Initialisation Tauri drag & drop...')
+        
+        const currentWebview = getCurrentWebview()
+        console.log('✅ getCurrentWebview obtenu:', currentWebview)
+        
+        unlisten = await currentWebview.onDragDropEvent((event) => {
+          // Ne logger que les événements importants (pas les survols)
+          if (event.payload.type !== 'over') {
+            console.log('🎯 TAURI DRAG DROP EVENT:', event.payload.type)
+          }
           
-          const currentWebview = getCurrentWebview()
-          console.log('✅ getCurrentWebview obtenu:', currentWebview)
-          
-          unlisten = await currentWebview.onDragDropEvent((event) => {
-            // Ne logger que les événements importants (pas les survols)
-            if (event.payload.type !== 'over') {
-              console.log('🎯 TAURI DRAG DROP EVENT:', event.payload.type)
+          if (event.payload.type === 'over') {
+            setDragActive(true)
+          } else if (event.payload.type === 'cancelled') {
+            console.log('❌ Drag annulé')
+            setDragActive(false)
+          } else if (event.payload.type === 'drop') {
+            console.log('💧 Drop détecté! Paths:', event.payload.paths)
+            setDragActive(false)
+            const paths = event.payload.paths
+            if (paths && paths.length > 0) {
+              console.log('📂 Traitement fichier:', paths[0])
+              handleTauriFileDrop(paths[0])
             }
-            
-            if (event.payload.type === 'over') {
-              setDragActive(true)
-            } else if (event.payload.type === 'cancelled') {
-              console.log('❌ Drag annulé')
-              setDragActive(false)
-            } else if (event.payload.type === 'drop') {
-              console.log('💧 Drop détecté! Paths:', event.payload.paths)
-              setDragActive(false)
-              const paths = event.payload.paths
-              if (paths && paths.length > 0) {
-                console.log('📂 Traitement fichier:', paths[0])
-                handleTauriFileDrop(paths[0])
-              }
-            }
-          })
-          
-          console.log('✅ Listener Tauri drag & drop configuré')
-        } else {
-          console.log('📱 Mode web - drag & drop HTML5 utilisé')
-          setIsTauriMode(false)
-        }
+          }
+        })
+        
+        console.log('✅ Listener Tauri drag & drop configuré')
       } catch (error) {
         console.error('❌ Erreur setup Tauri drag & drop:', error)
-        setIsTauriMode(false)
       }
     }
 
@@ -181,18 +170,11 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
                         extension === 'png' ? 'image/png' : 'application/octet-stream'
         
         // Appeler la commande Tauri pour lire et uploader le fichier directement
-        let url: string
-        if (isTauriMode && (window as any).__TAURI_IPC__) {
-          url = await invoke<string>('cmd_upload_file_from_path', {
-            filePath: filePath,
-            originalFilename: fileName,
-            contentType: mimeType
-          })
-        } else {
-          // Mode web - simulation
-          console.log('🌐 Mode web - simulation d\'upload')
-          url = `file://${filePath}`
-        }
+        const url = await invoke<string>('cmd_upload_file_from_path', {
+          filePath: filePath,
+          originalFilename: fileName,
+          contentType: mimeType
+        })
         
         setUploadedFile({
           name: fileName,
@@ -213,36 +195,8 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
     }
   }
 
-  // Gestion du drag & drop (fallback HTML5)
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(true)
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    // Ne désactiver que si on sort vraiment de la zone de drop
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return
-    setDragActive(false)
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-    
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) {
-      handleFileUpload(files[0])
-    }
-  }
+  // Drag & drop géré uniquement par Tauri
+  // Les événements HTML5 ne sont pas nécessaires
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -254,11 +208,10 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
   }
 
   const handleFileUpload = async (file: File) => {
-    // Reset états précédents
+    // Upload via input file classique (sans drag & drop)
     setUploadError(null)
     setUploadedFile(null)
     
-    // Validation du fichier
     const validation = validateFile(file)
     if (!validation.valid) {
       setUploadError(validation.error || 'Fichier invalide')
@@ -317,15 +270,8 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       
       console.log('📤 Envoi à Tauri:', operationDto)
       
-      // Appel vers la commande Tauri pour création (avec fallback web)
-      let operationId: string
-      if (isTauriMode && (window as any).__TAURI_IPC__) {
-        operationId = await invoke<string>('cmd_create_operation', { dto: operationDto })
-      } else {
-        // Mode web - simulation pour les tests
-        console.log('🌐 Mode web - simulation de création d\'opération')
-        operationId = `web-op-${Date.now()}`
-      }
+      // Appel vers la commande Tauri pour création
+      const operationId = await invoke<string>('cmd_create_operation', { dto: operationDto })
       console.log('✅ Opération créée avec succès:', operationId)
       setSuccessMessage(`✅ Opération ${operationType === 'sale' ? 'vente' : 'achat'} créée avec succès !`)
       
@@ -337,7 +283,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       setDatePaiement('')
       setMontantHt('')
       setMontantTva('')
-      setLibelle('')
+      setLabel('')
       setUploadedFile(null)
       setUploadError(null)
       
@@ -557,10 +503,6 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
               />
               <div
                 onClick={() => !isUploading && fileInputRef.current?.click()}
-                onDragEnter={!isTauriMode ? handleDragEnter : undefined}
-                onDragLeave={!isTauriMode ? handleDragLeave : undefined}
-                onDragOver={!isTauriMode ? handleDragOver : undefined}
-                onDrop={!isTauriMode ? handleDrop : undefined}
                 className={`flex items-center gap-2 px-3 py-2 border-2 border-dashed rounded transition-colors text-xs ${
                   isUploading 
                     ? 'border-orange-500 bg-orange-500/10 text-orange-400 cursor-wait'

@@ -10,7 +10,8 @@ import {
   Calendar,
   ChevronDown,
   ArrowLeftRight,
-  ClipboardList
+  ClipboardList,
+  CalendarDays
 } from 'lucide-react'
 import type { RouteKey, Period } from '../types'
 import { useAppStore, useCurrentPeriod } from '../stores/useAppStore'
@@ -40,6 +41,12 @@ const navigation = [
     name: 'Déclaration d\'Impôts', 
     icon: Calendar,
     description: 'Déclaration annuelle'
+  },
+  { 
+    key: 'yearly-planning' as RouteKey, 
+    name: 'Planification Annuelle', 
+    icon: CalendarDays,
+    description: 'Planning et objectifs'
   },
   { 
     key: 'simulations' as RouteKey, 
