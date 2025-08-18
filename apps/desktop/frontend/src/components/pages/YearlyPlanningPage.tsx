@@ -60,42 +60,7 @@ interface UpdateMonthPlanningDto {
     estimated_revenue_cents: number
 }
 
-// Jours fériés français (plus précis)
-const getFrenchPublicHolidays = (year: number): Record<number, number> => {
-    // Jours fériés fixes + estimation des jours variables
-    // Les jours fériés variables (Pâques, Ascension, Pentecôte) varient selon l'année
-    const holidays: Record<number, number> = {
-        1: 1,  // 1er janvier (Jour de l'an)
-        4: 1,  // Lundi de Pâques (approximation - tombe souvent en avril)
-        5: 3,  // 1er mai (Fête du travail) + 8 mai (Victoire 1945) + Ascension (souvent en mai)
-        6: 1,  // Parfois Pentecôte en juin
-        7: 1,  // 14 juillet (Fête nationale)
-        8: 1,  // 15 août (Assomption)
-        11: 1, // 1er novembre (Toussaint) + 11 novembre (Armistice)
-        12: 1, // 25 décembre (Noël)
-    }
-
-    // Ajustements selon l'année (Pâques bouge)
-    if (year === 2025) {
-        holidays[4] = 1 // Lundi de Pâques: 21 avril 2025
-        holidays[5] = 3 // 1er mai + 8 mai + Ascension (29 mai)
-    } else if (year === 2026) {
-        holidays[4] = 1 // Lundi de Pâques: 6 avril 2026
-        holidays[5] = 3 // 1er mai + 8 mai + Ascension (14 mai)
-    } else if (year === 2027) {
-        holidays[3] = 1 // Lundi de Pâques: 29 mars 2027
-        holidays[4] = 0 // Pas en avril
-        holidays[5] = 4 // 1er mai + 8 mai + Ascension (6 mai) + Pentecôte
-    } else if (year === 2028) {
-        holidays[4] = 1 // Lundi de Pâques: 17 avril 2028
-        holidays[5] = 3 // 1er mai + 8 mai + Ascension (25 mai)
-    } else if (year === 2024) {
-        holidays[4] = 1 // Lundi de Pâques: 1er avril 2024
-        holidays[5] = 4 // 1er mai + 8 mai + Ascension (9 mai) + Pentecôte (20 mai)
-    }
-
-    return holidays
-}
+// Plus de calcul automatique des jours fériés - l'utilisateur les saisit manuellement
 
 // Fonction pour obtenir le nombre de jours ouvrables dans un mois
 const getWorkingDaysInMonth = (year: number, month: number): number => {
@@ -125,11 +90,32 @@ const YearlyPlanningPage: React.FC = () => {
     const [planningData, setPlanningData] = useState<YearlyPlanning | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+    const [showSaveToast, setShowSaveToast] = useState(false)
+    const [previousDecemberRevenue, setPreviousDecemberRevenue] = useState<number>(0)
+
+    // Charger le CA de décembre de l'année précédente
+    const loadPreviousDecemberRevenue = async (year: number) => {
+        try {
+            const previousYear = year - 1
+            const previousYearPlanning = await invoke<YearlyPlanning | null>('cmd_get_yearly_planning', {year: previousYear})
+            if (previousYearPlanning && previousYearPlanning.months.length >= 12) {
+                const decemberMonth = previousYearPlanning.months.find(m => m.month === 12)
+                if (decemberMonth) {
+                    setPreviousDecemberRevenue(decemberMonth.estimated_revenue_cents / 100)
+                    return
+                }
+            }
+        } catch (error) {
+            console.log('Pas de données pour décembre de l\'année précédente')
+        }
+        setPreviousDecemberRevenue(0)
+    }
 
     // Charger les données depuis le backend
     const loadYearlyPlanning = async (year: number) => {
         setIsLoading(true)
         try {
+            // Charger les données de l'année courante
             const result = await invoke<YearlyPlanning | null>('cmd_get_yearly_planning', {year})
             if (result) {
                 setPlanningData(result)
@@ -138,11 +124,16 @@ const YearlyPlanningPage: React.FC = () => {
                 const defaultPlanning = createDefaultPlanning(year)
                 setPlanningData(defaultPlanning)
             }
+            
+            // Charger le CA de décembre de l'année précédente pour le calcul de janvier
+            await loadPreviousDecemberRevenue(year)
+            
         } catch (error) {
             console.error('Erreur lors du chargement de la planification:', error)
             // En cas d'erreur, créer une planification par défaut
             const defaultPlanning = createDefaultPlanning(year)
             setPlanningData(defaultPlanning)
+            setPreviousDecemberRevenue(0)
         } finally {
             setIsLoading(false)
         }
@@ -151,12 +142,9 @@ const YearlyPlanningPage: React.FC = () => {
     // Créer une planification par défaut
     const createDefaultPlanning = (year: number): YearlyPlanning => {
         const months: MonthPlanning[] = []
-        const holidays = getFrenchPublicHolidays(year)
 
         for (let month = 1; month <= 12; month++) {
             const maxDays = getWorkingDaysInMonth(year, month)
-            const publicHolidays = holidays[month] || 0
-            const workingDays = Math.max(0, maxDays - publicHolidays)
 
             months.push({
                 id: `temp-${year}-${month}`, // ID temporaire
@@ -164,9 +152,9 @@ const YearlyPlanningPage: React.FC = () => {
                 month,
                 max_working_days: maxDays,
                 holidays_taken: 0,
-                public_holidays: publicHolidays,
-                working_days: workingDays,
-                estimated_revenue_cents: workingDays * 40000, // 400€ par défaut
+                public_holidays: 0, // L'utilisateur saisira manuellement
+                working_days: maxDays, // Par défaut = jours max (avant saisie congés/fériés)
+                estimated_revenue_cents: maxDays * 40000, // 400€ * jours max par défaut
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             })
@@ -236,6 +224,10 @@ const YearlyPlanningPage: React.FC = () => {
             // Recharger les données pour obtenir les IDs corrects
             await loadYearlyPlanning(selectedYear)
             setHasUnsavedChanges(false)
+            
+            // Afficher le toast de confirmation
+            setShowSaveToast(true)
+            setTimeout(() => setShowSaveToast(false), 3000)
         } catch (error) {
             console.error('Erreur lors de la sauvegarde:', error)
             alert('Erreur lors de la sauvegarde de la planification')
@@ -256,6 +248,12 @@ const YearlyPlanningPage: React.FC = () => {
             workingDaysRatio: 0,
             isOverLimit: false,
             remainingDays: 0,
+            monthlyTaxCalculations: [],
+            totalVat: 0,
+            totalUrssaf: 0,
+            totalTax: 0,
+            totalEncaissed: 0,
+            totalAvailable: 0,
         }
 
         const totalWorkingDays = planningData.months.reduce((sum, month) => sum + month.working_days, 0)
@@ -263,6 +261,53 @@ const YearlyPlanningPage: React.FC = () => {
         const totalHolidaysTaken = planningData.months.reduce((sum, month) => sum + month.holidays_taken, 0)
         const totalPublicHolidays = planningData.months.reduce((sum, month) => sum + month.public_holidays, 0)
         const totalMaxDays = planningData.months.reduce((sum, month) => sum + month.max_working_days, 0)
+
+        // Calculs TVA + URSSAF par mois avec décalage
+        const VAT_RATE = 0.20 // 20% sur HT
+        const URSSAF_RATE = 0.261 // 26.1% sur HT
+        
+        const monthlyTaxCalculations = planningData.months.map((month, index) => {
+            const estimatedRevenue = month.estimated_revenue_cents / 100 // CA estimé (facturé ce mois)
+            
+            // CA HT estimé facturé le mois précédent (décalage d'encaissement)
+            let encaissedRevenueHT = 0
+            if (index > 0) {
+                // Mois 2-12: prendre le CA estimé HT du mois précédent de la même année
+                encaissedRevenueHT = planningData.months[index - 1].estimated_revenue_cents / 100
+            } else if (index === 0) {
+                // Janvier: prendre le CA estimé HT de décembre de l'année précédente
+                encaissedRevenueHT = previousDecemberRevenue
+            }
+            
+            // CA TTC réellement encaissé = CA HT + TVA
+            const encaissedRevenueTTC = encaissedRevenueHT * (1 + VAT_RATE)
+            
+            // Calculs des charges sur le CA HT encaissé
+            const vatAmount = encaissedRevenueHT * VAT_RATE // TVA = 20% du HT
+            const urssafAmount = encaissedRevenueHT * URSSAF_RATE // URSSAF = 26.1% du HT
+            const maltCommission = encaissedRevenueHT * 0.05 // Commission Malt = 5% du HT
+            
+            const totalTaxes = vatAmount + urssafAmount + maltCommission
+            const availableAmount = encaissedRevenueTTC - totalTaxes // CA disponible = TTC encaissé - toutes charges
+            
+            return {
+                monthIndex: index,
+                estimatedRevenue, // CA facturé ce mois
+                encaissedRevenue: encaissedRevenueTTC, // CA TTC reçu ce mois (facturé N-1)
+                vatAmount, // TVA sur CA encaissé
+                urssafAmount, // URSSAF sur CA encaissé
+                maltCommission, // Commission Malt sur CA encaissé
+                totalTaxes, // Total charges (TVA + URSSAF + Malt)
+                availableAmount, // CA disponible après charges
+            }
+        })
+        
+        const totalVat = monthlyTaxCalculations.reduce((sum, calc) => sum + calc.vatAmount, 0)
+        const totalUrssaf = monthlyTaxCalculations.reduce((sum, calc) => sum + calc.urssafAmount, 0)
+        const totalMaltCommission = monthlyTaxCalculations.reduce((sum, calc) => sum + calc.maltCommission, 0)
+        const totalTax = monthlyTaxCalculations.reduce((sum, calc) => sum + calc.totalTaxes, 0)
+        const totalEncaissed = monthlyTaxCalculations.reduce((sum, calc) => sum + calc.encaissedRevenue, 0)
+        const totalAvailable = monthlyTaxCalculations.reduce((sum, calc) => sum + calc.availableAmount, 0)
 
         // Ratio par rapport à la limite client
         const workingDaysRatio = (totalWorkingDays / planningData.max_working_days_limit) * 100
@@ -279,8 +324,15 @@ const YearlyPlanningPage: React.FC = () => {
             workingDaysRatio,
             isOverLimit,
             remainingDays,
+            monthlyTaxCalculations,
+            totalVat,
+            totalUrssaf,
+            totalMaltCommission,
+            totalTax,
+            totalEncaissed,
+            totalAvailable,
         }
-    }, [planningData])
+    }, [planningData, previousDecemberRevenue])
 
     // Mise à jour du TJM
     const updateTjm = (newTjm: number) => {
@@ -300,7 +352,7 @@ const YearlyPlanningPage: React.FC = () => {
         setHasUnsavedChanges(true)
     }
 
-    // Mise à jour des congés pour un mois
+    // Mise à jour des congés pour un mois (accepte les demi-journées)
     const updateHolidaysTaken = (monthIndex: number, holidaysTaken: number) => {
         if (!planningData) return
 
@@ -322,14 +374,19 @@ const YearlyPlanningPage: React.FC = () => {
         setHasUnsavedChanges(true)
     }
 
-    // Mise à jour du CA estimé pour un mois
-    const updateEstimatedRevenue = (monthIndex: number, revenueInEuros: number) => {
+    // Mise à jour des jours fériés pour un mois
+    const updatePublicHolidays = (monthIndex: number, publicHolidays: number) => {
         if (!planningData) return
 
         const updatedMonths = [...planningData.months]
+        const month = updatedMonths[monthIndex]
+        const newWorkingDays = Math.max(0, month.max_working_days - publicHolidays - month.holidays_taken)
+
         updatedMonths[monthIndex] = {
-            ...updatedMonths[monthIndex],
-            estimated_revenue_cents: revenueInEuros * 100
+            ...month,
+            public_holidays: publicHolidays,
+            working_days: newWorkingDays,
+            estimated_revenue_cents: newWorkingDays * planningData.tjm_cents
         }
 
         setPlanningData({
@@ -520,12 +577,19 @@ const YearlyPlanningPage: React.FC = () => {
                                 {planningData.months.map((month, index) => (
                                     <td key={month.id} className="px-2 py-2 text-center">
                                         <input
-                                            type="number"
-                                            value={month.holidays_taken}
-                                            onChange={(e) => updateHolidaysTaken(index, parseInt(e.target.value) || 0)}
+                                            type="text"
+                                            value={month.holidays_taken === 0 ? '' : month.holidays_taken.toString()}
+                                            onChange={(e) => {
+                                                const value = e.target.value.replace(',', '.')
+                                                const numValue = parseFloat(value)
+                                                if (!isNaN(numValue) && numValue >= 0 && numValue <= month.max_working_days) {
+                                                    updateHolidaysTaken(index, numValue)
+                                                } else if (value === '') {
+                                                    updateHolidaysTaken(index, 0)
+                                                }
+                                            }}
+                                            placeholder="0"
                                             className="w-full px-1 py-1 text-sm text-center bg-slate-800 border border-orange-500/30 rounded focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-orange-400"
-                                            min="0"
-                                            max={month.max_working_days}
                                         />
                                     </td>
                                 ))}
@@ -534,14 +598,21 @@ const YearlyPlanningPage: React.FC = () => {
                                 </td>
                             </tr>
 
-                            {/* Row 3: Jours Fériés */}
+                            {/* Row 3: Jours Fériés (Editable) */}
                             <tr>
                                 <td className="px-3 py-2 text-sm font-medium text-red-400 bg-slate-850">
                                     Fériés
                                 </td>
-                                {planningData.months.map((month) => (
-                                    <td key={month.id} className="px-2 py-2 text-center text-sm text-red-400">
-                                        {month.public_holidays}
+                                {planningData.months.map((month, index) => (
+                                    <td key={month.id} className="px-2 py-2 text-center">
+                                        <input
+                                            type="number"
+                                            value={month.public_holidays}
+                                            onChange={(e) => updatePublicHolidays(index, parseInt(e.target.value) || 0)}
+                                            className="w-full px-1 py-1 text-sm text-center bg-slate-800 border border-red-500/30 rounded focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 text-red-400"
+                                            min="0"
+                                            max={month.max_working_days}
+                                        />
                                     </td>
                                 ))}
                                 <td className="px-3 py-2 text-center text-sm font-bold text-red-400 bg-slate-850">
@@ -564,27 +635,123 @@ const YearlyPlanningPage: React.FC = () => {
                                 </td>
                             </tr>
 
-                            {/* Row 5: CA Estimé (Editable) */}
+                            {/* Row 5: CA Estimé (Calculé automatiquement) */}
                             <tr className="bg-slate-900/50">
                                 <td className="px-3 py-2 text-sm font-medium text-blue-400 bg-slate-850">
                                     CA estimé (€)
                                 </td>
-                                {planningData.months.map((month, index) => (
-                                    <td key={month.id} className="px-2 py-2 text-center">
-                                        <input
-                                            type="number"
-                                            value={Math.round(month.estimated_revenue_cents / 100)}
-                                            onChange={(e) => updateEstimatedRevenue(index, parseInt(e.target.value) || 0)}
-                                            className="w-full px-1 py-1 text-sm text-center bg-slate-800 border border-blue-500/30 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium text-blue-400"
-                                        />
+                                {planningData.months.map((month) => (
+                                    <td key={month.id} className="px-2 py-2 text-center text-sm font-bold text-blue-400">
+                                        {Math.round(month.estimated_revenue_cents / 100).toLocaleString('fr-FR')}
                                     </td>
                                 ))}
                                 <td className="px-3 py-2 text-center text-sm font-bold text-blue-400 bg-slate-850">
                                     {Math.round(calculations.totalEstimatedRevenue).toLocaleString('fr-FR')}
                                 </td>
                             </tr>
+
+                            {/* Row 6: CA Encaissé (décalé N-1) */}
+                            <tr className="bg-slate-900/50 border-t border-slate-600">
+                                <td className="px-3 py-2 text-sm font-medium text-purple-400 bg-slate-850">
+                                    CA encaissé TTC (€)
+                                </td>
+                                {calculations.monthlyTaxCalculations.map((calc) => (
+                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm font-bold text-purple-400">
+                                        {calc.encaissedRevenue === 0 ? '-' : Math.round(calc.encaissedRevenue).toLocaleString('fr-FR')}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 text-center text-sm font-bold text-purple-400 bg-slate-850">
+                                    {Math.round(calculations.totalEncaissed).toLocaleString('fr-FR')}
+                                </td>
+                            </tr>
+
+                            {/* Row 7: TVA */}
+                            <tr>
+                                <td className="px-3 py-2 text-sm font-medium text-yellow-400 bg-slate-850">
+                                    TVA (€)
+                                </td>
+                                {calculations.monthlyTaxCalculations.map((calc) => (
+                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm text-yellow-400">
+                                        {calc.vatAmount === 0 ? '-' : Math.round(calc.vatAmount).toLocaleString('fr-FR')}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 text-center text-sm font-bold text-yellow-400 bg-slate-850">
+                                    {Math.round(calculations.totalVat).toLocaleString('fr-FR')}
+                                </td>
+                            </tr>
+
+                            {/* Row 8: URSSAF */}
+                            <tr className="bg-slate-900/50">
+                                <td className="px-3 py-2 text-sm font-medium text-orange-400 bg-slate-850">
+                                    URSSAF (€)
+                                </td>
+                                {calculations.monthlyTaxCalculations.map((calc) => (
+                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm text-orange-400">
+                                        {calc.urssafAmount === 0 ? '-' : Math.round(calc.urssafAmount).toLocaleString('fr-FR')}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 text-center text-sm font-bold text-orange-400 bg-slate-850">
+                                    {Math.round(calculations.totalUrssaf).toLocaleString('fr-FR')}
+                                </td>
+                            </tr>
+
+                            {/* Row 9: Commission Malt */}
+                            <tr>
+                                <td className="px-3 py-2 text-sm font-medium text-cyan-400 bg-slate-850">
+                                    Com. Malt HT (€)
+                                </td>
+                                {calculations.monthlyTaxCalculations.map((calc) => (
+                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm text-cyan-400">
+                                        {calc.maltCommission === 0 ? '-' : Math.round(calc.maltCommission).toLocaleString('fr-FR')}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 text-center text-sm font-bold text-cyan-400 bg-slate-850">
+                                    {Math.round(calculations.totalMaltCommission).toLocaleString('fr-FR')}
+                                </td>
+                            </tr>
+
+                            {/* Row 10: Total Charges */}
+                            <tr>
+                                <td className="px-3 py-2 text-sm font-medium text-red-400 bg-slate-850">
+                                    Total charges (€)
+                                </td>
+                                {calculations.monthlyTaxCalculations.map((calc) => (
+                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm font-bold text-red-400">
+                                        {calc.totalTaxes === 0 ? '-' : Math.round(calc.totalTaxes).toLocaleString('fr-FR')}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 text-center text-sm font-bold text-red-400 bg-slate-850">
+                                    {Math.round(calculations.totalTax).toLocaleString('fr-FR')}
+                                </td>
+                            </tr>
+
+                            {/* Row 11: CA Disponible */}
+                            <tr className="bg-slate-900/50 border-t-2 border-emerald-600">
+                                <td className="px-3 py-2 text-sm font-medium text-emerald-400 bg-slate-850">
+                                    CA disponible (€)
+                                </td>
+                                {calculations.monthlyTaxCalculations.map((calc) => (
+                                    <td key={calc.monthIndex} className="px-2 py-2 text-center text-sm font-bold text-emerald-400">
+                                        {calc.availableAmount === 0 ? '-' : Math.round(calc.availableAmount).toLocaleString('fr-FR')}
+                                    </td>
+                                ))}
+                                <td className="px-3 py-2 text-center text-sm font-bold text-emerald-400 bg-slate-850">
+                                    {Math.round(calculations.totalAvailable).toLocaleString('fr-FR')}
+                                </td>
+                            </tr>
                             </tbody>
                         </table>
+                    </div>
+                    
+                    {/* Note explicative */}
+                    <div className="px-4 py-3 border-t border-slate-800 bg-slate-900/50">
+                        <p className="text-xs text-slate-400">
+                            <strong>CA encaissé TTC</strong> : CA HT facturé le mois précédent + TVA (décalage d'encaissement). 
+                            <strong>CA disponible</strong> : CA encaissé TTC - TVA - URSSAF - Com. Malt (toutes charges calculées sur le HT du CA encaissé).
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Taux appliqués sur CA HT encaissé : TVA 20%, URSSAF 26.1%, Com. Malt 5% • Janvier : données de décembre N-1 si disponibles
+                        </p>
                     </div>
                 </div>
             </div>
@@ -605,6 +772,18 @@ const YearlyPlanningPage: React.FC = () => {
                         >
                             Sauvegarder
                         </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Toast de confirmation de sauvegarde */}
+            {showSaveToast && (
+                <div className="fixed top-6 right-6 bg-green-600 border border-green-500 rounded-lg p-4 shadow-lg z-50 animate-pulse">
+                    <div className="flex items-center gap-2 text-white">
+                        <div className="w-5 h-5 rounded-full bg-green-400 flex items-center justify-center">
+                            ✓
+                        </div>
+                        <span className="font-medium">Planification sauvegardée avec succès !</span>
                     </div>
                 </div>
             )}
