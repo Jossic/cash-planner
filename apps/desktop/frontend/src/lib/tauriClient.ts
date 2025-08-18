@@ -98,6 +98,8 @@ export class TauriClient {
   private static transformOperation(rawOp: any): Operation {
     const operation = {
       ...rawOp,
+      // Le backend retourne 'type' mais le frontend attend 'operation_type'
+      operation_type: rawOp.type || rawOp.operation_type,
       // Ajout des propriétés calculées pour compatibilité avec l'ancien code
       get date() { return this.invoice_date },
       get encaissement_date() { return this.payment_date },

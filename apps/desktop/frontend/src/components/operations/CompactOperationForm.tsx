@@ -293,7 +293,7 @@ export const CompactOperationForm: React.FC<CompactOperationFormProps> = ({
       const operationDto = {
         invoice_date: invoiceDateISO,
         payment_date: paymentDateISO,
-        operation_type: operationType,
+        operation_type: operationType, // Frontend utilise operation_type
         amount_ht_cents: operationType === 'purchase' && !montantHt ? 0 : Math.round(montantHtNum * 100), // HT optionnel pour achats
         vat_rate: operationType === 'purchase' && montantHt ? (parseFloat(montantTva) / parseFloat(montantHt) * 100) : 20, // Défaut 20% si pas de HT
         vat_on_payments: operationType === 'sale' ? true : (operationType === 'purchase' ? isPrestation : false),
