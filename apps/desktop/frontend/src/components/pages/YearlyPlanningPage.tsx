@@ -92,23 +92,36 @@ const YearlyPlanningPage: React.FC = () => {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
     const [showSaveToast, setShowSaveToast] = useState(false)
     const [previousDecemberRevenue, setPreviousDecemberRevenue] = useState<number>(0)
+    const [previousNovemberRevenue, setPreviousNovemberRevenue] = useState<number>(0)
 
-    // Charger le CA de décembre de l'année précédente
-    const loadPreviousDecemberRevenue = async (year: number) => {
+    // Charger les CA de novembre et décembre de l'année précédente
+    const loadPreviousYearRevenues = async (year: number) => {
         try {
             const previousYear = year - 1
             const previousYearPlanning = await invoke<YearlyPlanning | null>('cmd_get_yearly_planning', {year: previousYear})
             if (previousYearPlanning && previousYearPlanning.months.length >= 12) {
+                // Décembre N-1 (pour encaissement janvier N et calcul février N)
                 const decemberMonth = previousYearPlanning.months.find(m => m.month === 12)
                 if (decemberMonth) {
                     setPreviousDecemberRevenue(decemberMonth.estimated_revenue_cents / 100)
-                    return
+                } else {
+                    setPreviousDecemberRevenue(0)
                 }
+                
+                // Novembre N-1 (pour calcul janvier N)
+                const novemberMonth = previousYearPlanning.months.find(m => m.month === 11)
+                if (novemberMonth) {
+                    setPreviousNovemberRevenue(novemberMonth.estimated_revenue_cents / 100)
+                } else {
+                    setPreviousNovemberRevenue(0)
+                }
+                return
             }
         } catch (error) {
-            console.log('Pas de données pour décembre de l\'année précédente')
+            console.log('Pas de données pour l\'année précédente:', error)
         }
         setPreviousDecemberRevenue(0)
+        setPreviousNovemberRevenue(0)
     }
 
     // Charger les données depuis le backend
@@ -125,8 +138,8 @@ const YearlyPlanningPage: React.FC = () => {
                 setPlanningData(defaultPlanning)
             }
             
-            // Charger le CA de décembre de l'année précédente pour le calcul de janvier
-            await loadPreviousDecemberRevenue(year)
+            // Charger les CA de novembre et décembre de l'année précédente
+            await loadPreviousYearRevenues(year)
             
         } catch (error) {
             console.error('Erreur lors du chargement de la planification:', error)
@@ -285,11 +298,11 @@ const YearlyPlanningPage: React.FC = () => {
                 // Mois 3-12: prendre le CA estimé HT de 2 mois avant
                 taxableRevenueHT = planningData.months[index - 2].estimated_revenue_cents / 100
             } else if (index === 1) {
-                // Février: prendre décembre N-1
+                // Février: prendre décembre N-1 (encaissé janvier, facturé décembre)
                 taxableRevenueHT = previousDecemberRevenue
-            } else {
-                // Janvier: pas de données (besoin novembre N-1)
-                taxableRevenueHT = 0
+            } else if (index === 0) {
+                // Janvier: prendre novembre N-1 (encaissé décembre, facturé novembre)
+                taxableRevenueHT = previousNovemberRevenue
             }
             
             // CA TTC théorique = CA HT + TVA
@@ -351,7 +364,7 @@ const YearlyPlanningPage: React.FC = () => {
             totalEncaissed,
             totalAvailable,
         }
-    }, [planningData, previousDecemberRevenue])
+    }, [planningData, previousDecemberRevenue, previousNovemberRevenue])
 
     // Mise à jour du TJM
     const updateTjm = (newTjm: number) => {
