@@ -15,7 +15,7 @@ use domain::{
     // Annual tax declaration
     AnnualTaxData,
     // Yearly Planning
-    YearlyPlanning, MonthPlanning
+    YearlyPlanning
 };
 use infra::{connect_and_migrate, MinioService, MinioConfig, FileInfo, StorageStats};
 use serde::{Deserialize, Serialize};
@@ -136,16 +136,29 @@ async fn cmd_prepare_urssaf(state: State<'_, AppState>, y: i32, m: u8) -> Result
 }
 
 fn data_dir<R: tauri::Runtime>(_app: &tauri::App<R>) -> PathBuf {
-    // Get the workspace root (repo root) by going up from src-tauri directory
-    std::env::current_dir()
-        .unwrap()
-        .parent()  // apps/desktop
-        .unwrap()
-        .parent()  // apps
-        .unwrap()
-        .parent()  // repo root
-        .unwrap()
-        .to_path_buf()
+    // Try to find Cargo.toml to determine workspace root
+    let mut current_dir = std::env::current_dir().unwrap();
+    
+    // Search for workspace root by looking for the top-level Cargo.toml
+    loop {
+        let cargo_path = current_dir.join("Cargo.toml");
+        if cargo_path.exists() {
+            // Check if this is the workspace root by looking for [workspace] section
+            if let Ok(content) = std::fs::read_to_string(&cargo_path) {
+                if content.contains("[workspace]") {
+                    return current_dir;
+                }
+            }
+        }
+        
+        // Move up one directory
+        if let Some(parent) = current_dir.parent() {
+            current_dir = parent.to_path_buf();
+        } else {
+            // Fallback: use temp directory if we can't find workspace root
+            return std::env::temp_dir().join("jla-cash-planner");
+        }
+    }
 }
 
 fn main() {
