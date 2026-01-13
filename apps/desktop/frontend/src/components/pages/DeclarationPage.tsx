@@ -115,17 +115,28 @@ export const DeclarationPage: React.FC = () => {
         // Créer le calcul à partir des rapports V2
         const ventes = loadedOperations.filter(op => op.operation_type === 'sale')
         const achats = loadedOperations.filter(op => op.operation_type === 'purchase')
+
+        // Calculez les totaux directement depuis les opérations chargées pour garantir la cohérence (WYSIWYG)
+        // Ceci évite les divergences potentielles entre la liste affichée et les totaux calculés par le backend
+        const tvaCollectee = ventes.reduce((sum, op) => sum + (op.vat_amount_cents || 0), 0)
+        const tvaDeductible = achats.reduce((sum, op) => sum + (op.vat_amount_cents || 0), 0)
+        const tvaNetteAPayer = tvaCollectee - tvaDeductible
+        const caEncaisse = ventes.reduce((sum, op) => sum + (op.amount_ht_cents || 0), 0)
+
+        // Estimation URSSAF basée sur le CA recalculé
+        // Note: Le taux exact dépend des settings mais le frontend utilise des taux hardcodés pour l'affichage
+        // On utilise urssafReport.due_cents comme référence mais on pourrait le recalculer si nécessaire
         
         const calc: DeclarationCalculation = {
           periodKey: selectedPeriod.periodKey,
           operations: loadedOperations,
           ventes,
           achats,
-          tvaCollectee: vatReport.collected_cents,
-          tvaDeductible: vatReport.deductible_cents,
-          tvaNetteAPayer: vatReport.due_cents,
-          caEncaisse: urssafReport.ca_encaisse_cents,
-          urssafDue: urssafReport.due_cents
+          tvaCollectee,
+          tvaDeductible,
+          tvaNetteAPayer,
+          caEncaisse,
+          urssafDue: urssafReport.due_cents // On garde le montant URSSAF du backend pour l'instant
         }
         
         setCalculation(calc)
